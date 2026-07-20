@@ -81,10 +81,10 @@ export default function ReportesPage() {
                 key={p.id}
                 type="button"
                 onClick={() => setPeriod(p.id)}
-                className={`shrink-0 rounded-xl px-4 py-2 text-sm font-medium transition ${
+                className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition ${
                   period === p.id
-                    ? "bg-[var(--brand)] text-white"
-                    : "border border-[var(--line)] bg-white text-[var(--muted)] hover:border-[var(--brand)] hover:text-[var(--brand)]"
+                    ? "bg-[linear-gradient(135deg,#0f766e,#14b8a6,#22d3ee)] text-white shadow-[0_8px_22px_rgba(15,118,110,0.28)]"
+                    : "border border-white/60 bg-white/45 text-[var(--muted)] backdrop-blur-md hover:bg-white/70 hover:text-[var(--brand)]"
                 }`}
               >
                 {p.label}
@@ -103,34 +103,34 @@ export default function ReportesPage() {
         </div>
         <div className="grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Panel>
-            <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
               Total vendido
             </p>
-            <p className="mt-2 font-[family-name:var(--font-display)] text-2xl font-semibold text-[var(--brand)]">
+            <p className="mt-1.5 text-xl font-semibold text-[var(--brand)]">
               {formatMoney(total)}
             </p>
           </Panel>
           <Panel>
-            <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
               Tickets
             </p>
-            <p className="mt-2 font-[family-name:var(--font-display)] text-2xl font-semibold">
+            <p className="mt-1.5 text-xl font-semibold">
               {tickets}
             </p>
           </Panel>
           <Panel>
-            <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
               Artículos
             </p>
-            <p className="mt-2 font-[family-name:var(--font-display)] text-2xl font-semibold">
+            <p className="mt-1.5 text-xl font-semibold">
               {itemsSold}
             </p>
           </Panel>
           <Panel>
-            <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
               Ticket promedio
             </p>
-            <p className="mt-2 font-[family-name:var(--font-display)] text-2xl font-semibold">
+            <p className="mt-1.5 text-xl font-semibold">
               {formatMoney(average)}
             </p>
           </Panel>
@@ -138,7 +138,7 @@ export default function ReportesPage() {
         <Panel className="flex min-h-0 flex-1 flex-col">
           <div className="mb-3 flex shrink-0 items-center gap-2">
             <Receipt size={18} className="text-[var(--brand)]" />
-            <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+            <h2 className="text-sm font-semibold">
               Detalle de ventas
             </h2>
           </div>
@@ -148,7 +148,7 @@ export default function ReportesPage() {
               return (
                 <div
                   key={sale.id}
-                  className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--bg-soft)]"
+                  className="overflow-hidden border border-[var(--line)] bg-white"
                 >
                   <button
                     type="button"

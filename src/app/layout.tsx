@@ -1,17 +1,20 @@
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Sans, IBM_Plex_Serif } from "next/font/google";
+import { Outfit, Plus_Jakarta_Sans } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import "./globals.css";
-const plexSans = IBM_Plex_Sans({
+
+const sans = Plus_Jakarta_Sans({
   variable: "--font-sans",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
-const plexSerif = IBM_Plex_Serif({
+
+const display = Outfit({
   variable: "--font-display",
   subsets: ["latin"],
   weight: ["500", "600", "700"],
 });
+
 export const metadata: Metadata = {
   title: "MI BARRIO",
   description:
@@ -31,13 +34,15 @@ export const metadata: Metadata = {
     apple: [{ url: "/icons/icon-192.png", sizes: "192x192" }],
   },
 };
+
 export const viewport: Viewport = {
-  themeColor: "#1f6b4f",
+  themeColor: "#0f766e",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
 };
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -46,7 +51,7 @@ export default function RootLayout({
   return (
     <html
       lang="es-GT"
-      className={`${plexSans.variable} ${plexSerif.variable} h-full`}
+      className={`${sans.variable} ${display.variable} h-full`}
     >
       <body className="min-h-full font-sans antialiased">
         <Providers>{children}</Providers>

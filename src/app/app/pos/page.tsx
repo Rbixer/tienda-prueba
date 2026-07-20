@@ -168,12 +168,12 @@ export default function PosPage() {
             </span>
           </div>
           {error ? (
-            <p className="mb-3 shrink-0 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p className="mb-3 shrink-0 border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
               {error}
             </p>
           ) : null}
           {message ? (
-            <p className="mb-3 shrink-0 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            <p className="mb-3 shrink-0 border border-[var(--line)] bg-[var(--brand-soft)] px-3 py-2 text-sm text-[var(--brand)]">
               {message}
             </p>
           ) : null}
@@ -227,7 +227,7 @@ export default function PosPage() {
                   const ok = addToCart(product.id);
                   if (ok) setMessage(`Agregado: ${product.name}`);
                 }}
-                className="flex gap-3 rounded-xl border border-[var(--line)] bg-[var(--bg-soft)] p-3 text-left transition hover:border-[var(--brand)] hover:bg-white active:scale-[0.99]"
+                className="flex gap-3 rounded-md border border-[var(--line)] bg-[var(--bg-soft)] p-3 text-left transition hover:border-[var(--brand)] hover:bg-white active:scale-[0.99]"
               >
                 <ProductThumb src={product.image} alt={product.name} />
                 <span className="min-w-0 flex-1">
@@ -271,7 +271,7 @@ export default function PosPage() {
               {cart.map((item) => (
                 <div
                   key={item.productId}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-[var(--bg-soft)] px-3 py-2"
+                  className="flex items-center justify-between gap-3 rounded-md border border-[var(--line)] bg-[var(--bg-soft)] px-3 py-2"
                 >
                   <div className="flex min-w-0 items-center gap-2">
                     <ProductThumb
@@ -319,7 +319,7 @@ export default function PosPage() {
                 </div>
               ))}
               {cart.length === 0 ? (
-                <div className="flex h-full min-h-24 items-center justify-center rounded-xl border border-dashed border-[var(--line)] bg-[var(--bg-soft)]/60 px-3">
+                <div className="flex h-full min-h-24 items-center justify-center rounded-md border border-dashed border-[var(--line)] bg-[var(--bg-soft)]/60 px-3">
                   <p className="text-center text-sm text-[var(--muted)]">
                     Escanea un código o toca un producto.
                   </p>
@@ -334,12 +334,12 @@ export default function PosPage() {
                 </span>
               </div>
               {error ? (
-                <p className="mt-2 hidden rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 lg:block">
+                <p className="mt-2 hidden rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 lg:block">
                   {error}
                 </p>
               ) : null}
               {message ? (
-                <p className="mt-2 hidden rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800 lg:block">
+                <p className="mt-2 hidden rounded-md bg-[var(--brand-soft)] px-3 py-2 text-sm text-[var(--brand)] lg:block">
                   {message}
                 </p>
               ) : null}

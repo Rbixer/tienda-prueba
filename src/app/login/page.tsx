@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Store } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Field, buttonPrimary, inputClass } from "@/components/ui";
+
 export default function LoginPage() {
   const router = useRouter();
   const { ready, session, login } = useAuth();
@@ -23,36 +24,35 @@ export default function LoginPage() {
     router.replace("/app");
   }
   return (
-    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-[var(--bg)] px-4 py-10">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-20 top-10 h-80 w-80 rounded-full bg-[var(--brand)]/15 blur-3xl" />
-        <div className="absolute bottom-0 right-0 h-96 w-96 rounded-full bg-[var(--accent)]/20 blur-3xl" />
+    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden px-4 py-10">
+      <div className="pointer-events-none absolute inset-0" aria-hidden>
+        <div className="liquid-orb -left-10 top-10 h-80 w-80 bg-[#2dd4bf]" />
         <div
-          className="absolute inset-0 opacity-[0.35]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(20,35,28,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(20,35,28,0.04) 1px, transparent 1px)",
-            backgroundSize: "28px 28px",
-          }}
+          className="liquid-orb bottom-0 right-0 h-96 w-96 bg-[#22d3ee]"
+          style={{ animationDelay: "1.5s" }}
+        />
+        <div
+          className="liquid-orb left-1/2 top-1/3 h-64 w-64 bg-[#0f766e]"
+          style={{ animationDelay: "3s", opacity: 0.4 }}
         />
       </div>
-      <div className="relative w-full max-w-md animate-[fadeUp_0.5s_ease]">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand)] text-white shadow-lg shadow-[var(--brand)]/25">
+      <div className="relative w-full max-w-md animate-[fadeUp_0.55s_ease]">
+        <div className="mb-7 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#0f766e,#14b8a6,#22d3ee)] text-white shadow-[0_16px_40px_rgba(15,118,110,0.35)]">
             <Store size={28} />
           </div>
-          <h1 className="font-[family-name:var(--font-display)] text-4xl font-semibold tracking-tight text-[var(--brand)]">
+          <h1 className="bg-[linear-gradient(90deg,#0f766e,#14b8a6,#0891b2)] bg-clip-text font-[family-name:var(--font-display)] text-4xl font-semibold tracking-tight text-transparent">
             MI BARRIO
           </h1>
           <p className="mt-2 text-sm text-[var(--muted)]">
-            Inventario, POS y control de sucursales en un solo lugar.
+            Inventario, POS y sucursales con diseño liquid glass.
           </p>
         </div>
         <form
           method="post"
           action="/login"
           onSubmit={onSubmit}
-          className="space-y-4 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-[0_20px_50px_rgba(20,35,28,0.08)]"
+          className="glass-strong space-y-4 rounded-3xl p-6"
         >
           <Field label="Usuario">
             <input
@@ -74,7 +74,7 @@ export default function LoginPage() {
             />
           </Field>
           {error ? (
-            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p className="rounded-xl border border-rose-200/80 bg-rose-50/80 px-3 py-2 text-sm text-rose-700">
               {error}
             </p>
           ) : null}
@@ -85,8 +85,8 @@ export default function LoginPage() {
           >
             {ready ? "Entrar" : "Cargando..."}
           </button>
-          <div className="rounded-xl bg-[var(--bg-soft)] px-3 py-3 text-xs text-[var(--muted)]">
-            <p className="font-medium text-[var(--ink)]">Accesos demo</p>
+          <div className="rounded-2xl border border-white/50 bg-white/35 px-3 py-3 text-xs text-[var(--muted)]">
+            <p className="font-semibold text-[var(--ink)]">Accesos demo</p>
             <p className="mt-1">Admin: admin / admin123</p>
             <p>Vendedor: vendedor / vendedor123</p>
           </div>

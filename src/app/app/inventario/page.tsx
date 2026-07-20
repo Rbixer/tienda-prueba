@@ -185,7 +185,7 @@ export default function InventarioPage() {
             <button
               type="button"
               onClick={openCreate}
-              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl bg-[var(--brand)] px-3 text-sm font-semibold text-white transition hover:bg-[var(--brand-dark)] sm:px-4"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-md bg-[var(--brand)] px-3 text-sm font-semibold text-white transition hover:bg-[var(--brand-dark)] sm:px-4"
               aria-label="Agregar producto"
               title="Agregar producto"
             >
@@ -204,7 +204,7 @@ export default function InventarioPage() {
           {filtered.map((product) => (
             <div
               key={product.id}
-              className="rounded-2xl border border-[var(--line)] bg-[var(--bg-soft)] p-3"
+              className="rounded-md border border-[var(--line)] bg-[var(--bg-soft)] p-3"
             >
               <div className="flex items-start gap-3">
                 <ProductThumb
@@ -388,7 +388,7 @@ export default function InventarioPage() {
       <button
         type="button"
         onClick={openCreate}
-        className="fixed z-40 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand)] text-white shadow-lg shadow-[var(--brand)]/30 transition hover:bg-[var(--brand-dark)] md:hidden"
+        className="fixed z-40 flex h-14 w-14 items-center justify-center rounded-md bg-[var(--brand)] text-white  transition hover:bg-[var(--brand-dark)] md:hidden"
         style={{
           right: "max(1rem, env(safe-area-inset-right))",
           bottom: "calc(5.25rem + env(safe-area-inset-bottom))",
@@ -409,7 +409,7 @@ export default function InventarioPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="producto-modal-title"
-            className="relative z-10 max-h-[92dvh] w-full max-w-md overflow-y-auto animate-[fadeUp_0.25s_ease] rounded-t-3xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-2xl sm:rounded-3xl sm:p-6"
+            className="relative z-10 max-h-[92dvh] w-full max-w-md overflow-y-auto animate-[fadeUp_0.25s_ease] border border-[var(--line)] bg-[var(--surface)] p-4 sm:p-5"
           >
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
@@ -426,7 +426,7 @@ export default function InventarioPage() {
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-xl p-2 text-[var(--muted)] hover:bg-[var(--bg-soft)] hover:text-[var(--ink)]"
+                className="rounded-md p-2 text-[var(--muted)] hover:bg-[var(--bg-soft)] hover:text-[var(--ink)]"
                 aria-label="Cerrar"
               >
                 <X size={20} />
@@ -442,14 +442,14 @@ export default function InventarioPage() {
                   className="hidden"
                   onChange={(e) => onPickImage(e.target.files?.[0])}
                 />
-                <div className="rounded-2xl border border-dashed border-[var(--line)] bg-[var(--bg-soft)] p-3">
+                <div className="rounded-md border border-dashed border-[var(--line)] bg-[var(--bg-soft)] p-3">
                   {image ? (
                     <div className="flex items-center gap-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={image}
                         alt="Vista previa"
-                        className="h-20 w-20 rounded-xl object-cover ring-1 ring-[var(--line)]"
+                        className="h-20 w-20 rounded-md object-cover ring-1 ring-[var(--line)]"
                       />
                       <div className="min-w-0 flex-1 space-y-2">
                         <p className="text-sm text-[var(--muted)]">
@@ -480,9 +480,9 @@ export default function InventarioPage() {
                       type="button"
                       onClick={() => fileRef.current?.click()}
                       disabled={loadingImage}
-                      className="flex w-full flex-col items-center gap-2 rounded-xl px-3 py-6 text-center transition hover:bg-white"
+                      className="flex w-full flex-col items-center gap-2 rounded-md px-3 py-6 text-center transition hover:bg-white"
                     >
-                      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-[var(--brand)] shadow-sm">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white text-[var(--brand)] shadow-sm">
                         {loadingImage ? (
                           <span className="h-5 w-5 animate-pulse rounded-full bg-[var(--brand)]/30" />
                         ) : (
@@ -533,7 +533,7 @@ export default function InventarioPage() {
                     </button>
                   </div>
                   {barcode ? (
-                    <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    <p className="rounded-md bg-[var(--brand-soft)] px-3 py-2 text-sm text-[var(--brand)]">
                       Código listo: <span className="font-mono font-semibold">{barcode}</span>
                     </p>
                   ) : null}
@@ -591,7 +591,7 @@ export default function InventarioPage() {
                 />
               </Field>
               {error ? (
-                <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
                   {error}
                 </p>
               ) : null}

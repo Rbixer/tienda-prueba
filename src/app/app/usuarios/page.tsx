@@ -55,7 +55,7 @@ export default function UsuariosPage() {
         <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,22rem)_1fr]">
           <Panel className="order-1 h-fit">
             <div className="mb-4 flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--brand-soft)] text-[var(--brand)]">
+              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[var(--brand-soft)] text-[var(--brand)]">
                 <UserPlus size={18} />
               </span>
               <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold sm:text-xl">
@@ -120,12 +120,12 @@ export default function UsuariosPage() {
                 </Field>
               </div>
               {error ? (
-                <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
                   {error}
                 </p>
               ) : null}
               {ok ? (
-                <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                <p className="rounded-md bg-[var(--brand-soft)] px-3 py-2 text-sm text-[var(--brand)]">
                   {ok}
                 </p>
               ) : null}
@@ -150,7 +150,7 @@ export default function UsuariosPage() {
                 return (
                   <div
                     key={user.id}
-                    className="rounded-2xl border border-[var(--line)] bg-[var(--bg-soft)] p-3"
+                    className="rounded-md border border-[var(--line)] bg-[var(--bg-soft)] p-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">

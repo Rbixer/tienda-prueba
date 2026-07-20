@@ -20,13 +20,13 @@ export function ProductThumb({
       <img
         src={src}
         alt={alt}
-        className={`${box} shrink-0 rounded-xl object-cover ring-1 ring-[var(--line)]`}
+        className={`${box} shrink-0 rounded-xl object-cover ring-1 ring-white/70 shadow-sm`}
       />
     );
   }
   return (
     <span
-      className={`${box} flex shrink-0 items-center justify-center rounded-xl bg-[var(--bg-soft)] text-[var(--muted)] ring-1 ring-[var(--line)]`}
+      className={`${box} flex shrink-0 items-center justify-center rounded-xl bg-white/50 text-[var(--muted)] ring-1 ring-white/70 backdrop-blur-md`}
       aria-hidden
     >
       <ImageIcon size={size === "sm" ? 14 : 18} />

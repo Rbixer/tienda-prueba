@@ -66,8 +66,8 @@ export function BarcodeCapture({ onDetected, children }: Props) {
       {children({ openCamera, busy })}
       {busy ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--ink)]/45 px-6">
-          <div className="rounded-2xl bg-white px-6 py-5 text-center shadow-xl">
-            <div className="mx-auto mb-3 h-10 w-10 animate-pulse rounded-full bg-[var(--brand)]/25" />
+          <div className="border border-[var(--line)] bg-white px-6 py-5 text-center">
+            <div className="mx-auto mb-3 h-8 w-8 animate-pulse bg-[var(--brand)]/25" />
             <p className="text-sm font-medium text-[var(--ink)]">
               Leyendo código de barras…
             </p>
@@ -82,21 +82,21 @@ export function BarcodeCapture({ onDetected, children }: Props) {
             aria-label="Cerrar"
             onClick={() => setErrorOpen(false)}
           />
-          <div className="relative z-10 w-full max-w-md rounded-t-3xl border border-[var(--line)] bg-white p-5 shadow-2xl sm:rounded-3xl">
+          <div className="relative z-10 w-full max-w-md border border-[var(--line)] bg-white p-5">
             <div className="mb-3 flex items-start justify-between gap-3">
               <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
                 No se leyó el código
               </h2>
               <button
                 type="button"
-                className="rounded-xl p-2 text-[var(--muted)]"
+                className="rounded-md p-2 text-[var(--muted)]"
                 onClick={() => setErrorOpen(false)}
               >
                 <X size={18} />
               </button>
             </div>
             {error ? (
-              <p className="mb-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
               </p>
             ) : null}

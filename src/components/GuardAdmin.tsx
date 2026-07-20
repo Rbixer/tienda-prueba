@@ -5,7 +5,7 @@ export function GuardAdmin({ children }: { children: React.ReactNode }) {
   if (!ready) return null;
   if (!session || session.role !== "administrador") {
     return (
-      <div className="rounded-2xl border border-[var(--line)] bg-white p-6 text-sm text-[var(--muted)]">
+      <div className="rounded-md border border-[var(--line)] bg-white p-6 text-sm text-[var(--muted)]">
         Esta sección solo está disponible para administradores.
       </div>
     );
