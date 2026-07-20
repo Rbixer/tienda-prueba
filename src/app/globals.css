@@ -1,0 +1,60 @@
+@import "tailwindcss";
+:root {
+  --bg: #eef3f0;
+  --bg-soft: #f7faf8;
+  --surface: #ffffff;
+  --ink: #14231c;
+  --muted: #5c6b63;
+  --line: #d7e0db;
+  --brand: #1f6b4f;
+  --brand-dark: #17553e;
+  --brand-soft: #e4f2eb;
+  --accent: #f0b429;
+  --background: var(--bg);
+  --foreground: var(--ink);
+}
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+  min-height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans), "IBM Plex Sans", system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display), "IBM Plex Serif", Georgia, serif;
+  letter-spacing: -0.02em;
+}
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #b7c6be;
+  border-radius: 999px;
+}
