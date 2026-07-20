@@ -20,6 +20,8 @@ export type Product = {
   /** Precio de costo */
   costPrice: number;
   quantity: number;
+  /** Código de barras */
+  barcode?: string;
   image?: string;
   branchId: string;
   createdAt: string;

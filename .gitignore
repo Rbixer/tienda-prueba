@@ -42,3 +42,6 @@ next-env.d.ts
 
 # shared store (runtime data)
 /data/store.json
+
+# local HTTPS certs
+/certificates/

@@ -1,7 +1,8 @@
 "use client";
-import { useMemo, useState } from "react";
-import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { Minus, Plus, ScanBarcode, ShoppingBag, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { BarcodeCapture } from "@/components/BarcodeCapture";
 import { ProductThumb } from "@/components/ProductThumb";
 import {
   Panel,
@@ -10,12 +11,14 @@ import {
   inputClass,
 } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
+import { barcodesMatch, normalizeBarcode } from "@/lib/barcode";
 import { formatMoney, formatDate } from "@/lib/store";
 import type { SaleItem } from "@/lib/types";
 export default function PosPage() {
   const { branchProducts, branchSales, checkout, currentBranchName } =
     useAuth();
   const [query, setQuery] = useState("");
+  const [barcodeInput, setBarcodeInput] = useState("");
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,39 +26,98 @@ export default function PosPage() {
     const q = query.trim().toLowerCase();
     return branchProducts
       .filter((p) => p.quantity > 0)
-      .filter((p) => !q || p.name.toLowerCase().includes(q));
+      .filter(
+        (p) =>
+          !q ||
+          p.name.toLowerCase().includes(q) ||
+          (p.barcode ?? "").toLowerCase().includes(q),
+      );
   }, [branchProducts, query]);
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  function addToCart(productId: string) {
-    const product = branchProducts.find((p) => p.id === productId);
-    if (!product || product.quantity <= 0) return;
-    setCart((prev) => {
-      const existing = prev.find((i) => i.productId === productId);
-      const currentQty = existing?.quantity ?? 0;
-      if (currentQty + 1 > product.quantity) {
-        setError(`Stock insuficiente de ${product.name}`);
-        return prev;
+  const addToCart = useCallback(
+    (productId: string) => {
+      const product = branchProducts.find((p) => p.id === productId);
+      if (!product || product.quantity <= 0) return false;
+      let ok = true;
+      setCart((prev) => {
+        const existing = prev.find((i) => i.productId === productId);
+        const currentQty = existing?.quantity ?? 0;
+        if (currentQty + 1 > product.quantity) {
+          setError(`Stock insuficiente de ${product.name}`);
+          ok = false;
+          return prev;
+        }
+        setError(null);
+        if (existing) {
+          return prev.map((i) =>
+            i.productId === productId
+              ? { ...i, quantity: i.quantity + 1 }
+              : i,
+          );
+        }
+        return [
+          ...prev,
+          {
+            productId: product.id,
+            name: product.name,
+            price: product.price,
+            quantity: 1,
+            image: product.image,
+          },
+        ];
+      });
+      return ok;
+    },
+    [branchProducts],
+  );
+  const addByBarcode = useCallback(
+    (code: string) => {
+      const normalized = normalizeBarcode(code);
+      if (!normalized) {
+        setError("Código de barras vacío.");
+        setMessage(null);
+        return;
       }
-      setError(null);
-      if (existing) {
-        return prev.map((i) =>
-          i.productId === productId
-            ? { ...i, quantity: i.quantity + 1 }
-            : i,
+      setBarcodeInput(normalized);
+      const product = branchProducts.find((p) =>
+        barcodesMatch(p.barcode, normalized),
+      );
+      if (!product) {
+        setError(
+          `No hay producto con código ${normalized}. Regístralo primero en Inventario.`,
         );
+        setMessage(null);
+        return;
       }
-      return [
-        ...prev,
-        {
-          productId: product.id,
-          name: product.name,
-          price: product.price,
-          quantity: 1,
-          image: product.image,
-        },
-      ];
-    });
-  }
+      if (product.quantity <= 0) {
+        setError(`Sin stock de ${product.name}`);
+        setMessage(null);
+        return;
+      }
+      const ok = addToCart(product.id);
+      if (ok) {
+        setMessage(`Agregado: ${product.name}`);
+        setError(null);
+        setBarcodeInput("");
+      }
+    },
+    [addToCart, branchProducts],
+  );
+  /** Solo llena el campo; no agrega hasta que se pulse Agregar. */
+  const fillBarcodeFromScan = useCallback(
+    (code: string) => {
+      const normalized = normalizeBarcode(code);
+      if (!normalized) {
+        setError("Código de barras vacío.");
+        setMessage(null);
+        return;
+      }
+      setBarcodeInput(normalized);
+      setError(null);
+      setMessage(`Código leído: ${normalized}. Presiona Agregar.`);
+    },
+    [],
+  );
   function changeQty(productId: string, delta: number) {
     const product = branchProducts.find((p) => p.id === productId);
     setCart((prev) =>
@@ -89,6 +151,8 @@ export default function PosPage() {
     setCart([]);
   }
   return (
+    <BarcodeCapture onDetected={fillBarcodeFromScan}>
+      {({ openCamera, busy }) => (
     <AppShell
       title="Punto de venta"
       subtitle={`POS sin facturación · ${currentBranchName}`}
@@ -103,23 +167,80 @@ export default function PosPage() {
               {available.length} disponibles
             </span>
           </div>
-          <input
-            className={`${inputClass} mb-3 shrink-0`}
-            placeholder="Buscar en catálogo..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          {error ? (
+            <p className="mb-3 shrink-0 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </p>
+          ) : null}
+          {message ? (
+            <p className="mb-3 shrink-0 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              {message}
+            </p>
+          ) : null}
+          <div className="mb-2 flex shrink-0 gap-2">
+            <input
+              className={`${inputClass} flex-1`}
+              placeholder="Buscar nombre…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <div className="mb-3 flex shrink-0 gap-2">
+            <input
+              className={`${inputClass} flex-1 font-mono text-base`}
+              placeholder="O escribe el código y Enter"
+              value={barcodeInput}
+              onChange={(e) => setBarcodeInput(e.target.value)}
+              inputMode="numeric"
+              autoComplete="off"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addByBarcode(barcodeInput);
+                }
+              }}
+            />
+            <button
+              type="button"
+              className={`${buttonSecondary} min-h-11 shrink-0 px-4`}
+              onClick={() => addByBarcode(barcodeInput)}
+            >
+              Agregar
+            </button>
+            <button
+              type="button"
+              className={`${buttonPrimary} min-h-11 w-11 shrink-0 px-0`}
+              onClick={openCamera}
+              disabled={busy}
+              aria-label={busy ? "Leyendo código…" : "Escanear código de barras"}
+              title={busy ? "Leyendo código…" : "Escanear código"}
+            >
+              <ScanBarcode size={20} />
+            </button>
+          </div>
           <div className="grid min-h-0 flex-1 auto-rows-max content-start gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {available.map((product) => (
               <button
                 key={product.id}
                 type="button"
-                onClick={() => addToCart(product.id)}
+                onClick={() => {
+                  const ok = addToCart(product.id);
+                  if (ok) setMessage(`Agregado: ${product.name}`);
+                }}
                 className="flex gap-3 rounded-xl border border-[var(--line)] bg-[var(--bg-soft)] p-3 text-left transition hover:border-[var(--brand)] hover:bg-white active:scale-[0.99]"
               >
                 <ProductThumb src={product.image} alt={product.name} />
                 <span className="min-w-0 flex-1">
                   <p className="font-medium leading-snug">{product.name}</p>
+                  {product.barcode ? (
+                    <p className="mt-0.5 font-mono text-[10px] text-[var(--muted)]">
+                      {product.barcode}
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 text-[10px] text-amber-700">
+                      Sin código
+                    </p>
+                  )}
                   <div className="mt-2 flex items-center justify-between gap-2 text-sm">
                     <span className="font-semibold text-[var(--brand)]">
                       {formatMoney(product.price)}
@@ -200,7 +321,7 @@ export default function PosPage() {
               {cart.length === 0 ? (
                 <div className="flex h-full min-h-24 items-center justify-center rounded-xl border border-dashed border-[var(--line)] bg-[var(--bg-soft)]/60 px-3">
                   <p className="text-center text-sm text-[var(--muted)]">
-                    El carrito está vacío.
+                    Escanea un código o toca un producto.
                   </p>
                 </div>
               ) : null}
@@ -213,12 +334,12 @@ export default function PosPage() {
                 </span>
               </div>
               {error ? (
-                <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                <p className="mt-2 hidden rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 lg:block">
                   {error}
                 </p>
               ) : null}
               {message ? (
-                <p className="mt-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                <p className="mt-2 hidden rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800 lg:block">
                   {message}
                 </p>
               ) : null}
@@ -271,5 +392,7 @@ export default function PosPage() {
         </div>
       </div>
     </AppShell>
+      )}
+    </BarcodeCapture>
   );
 }

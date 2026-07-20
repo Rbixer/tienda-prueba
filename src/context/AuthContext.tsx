@@ -38,6 +38,7 @@ type AuthContextValue = {
     price: number;
     costPrice: number;
     quantity: number;
+    barcode?: string;
     image?: string;
     branchId?: string;
   }) => string | null;
@@ -48,6 +49,7 @@ type AuthContextValue = {
       price: number;
       costPrice: number;
       quantity: number;
+      barcode?: string;
       image?: string;
     },
   ) => string | null;
@@ -210,18 +212,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       price: number;
       costPrice: number;
       quantity: number;
+      barcode?: string;
       image?: string;
       branchId?: string;
     }) => {
       if (!session) return "Sesión no válida.";
       const name = input.name.trim();
+      const barcode = input.barcode?.trim() || undefined;
       if (!name) return "El nombre es obligatorio.";
       if (!input.image) return "La fotografía del producto es obligatoria.";
+      if (!barcode) return "El código de barras es obligatorio.";
       if (input.price < 0) return "El precio de venta no puede ser negativo.";
       if (input.costPrice < 0)
         return "El precio de costo no puede ser negativo.";
       if (input.quantity < 0) return "La cantidad no puede ser negativa.";
       const branchId = input.branchId ?? session.branchId;
+      if (
+        barcode &&
+        data.products.some(
+          (p) => p.branchId === branchId && p.barcode === barcode,
+        )
+      ) {
+        return "Ese código de barras ya está registrado en esta sucursal.";
+      }
       const now = new Date().toISOString();
       const product: Product = {
         id: uid("prod"),
@@ -229,6 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         price: Number(input.price),
         costPrice: Number(input.costPrice),
         quantity: Math.floor(input.quantity),
+        barcode,
         image: input.image,
         branchId,
         createdAt: now,
@@ -247,10 +261,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         price: number;
         costPrice: number;
         quantity: number;
+        barcode?: string;
         image?: string;
       },
     ) => {
       const name = input.name.trim();
+      const barcode = input.barcode?.trim() || undefined;
       if (!name) return "El nombre es obligatorio.";
       if (input.price < 0) return "El precio de venta no puede ser negativo.";
       if (input.costPrice < 0)
@@ -260,6 +276,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!current) return "Producto no encontrado.";
       const image = input.image ?? current.image;
       if (!image) return "La fotografía del producto es obligatoria.";
+      if (!barcode) return "El código de barras es obligatorio.";
+      if (
+        barcode &&
+        data.products.some(
+          (p) =>
+            p.id !== id &&
+            p.branchId === current.branchId &&
+            p.barcode === barcode,
+        )
+      ) {
+        return "Ese código de barras ya está registrado en esta sucursal.";
+      }
       persist({
         ...data,
         products: data.products.map((p) =>
@@ -270,6 +298,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 price: Number(input.price),
                 costPrice: Number(input.costPrice),
                 quantity: Math.floor(input.quantity),
+                barcode,
                 image,
                 updatedAt: new Date().toISOString(),
               }

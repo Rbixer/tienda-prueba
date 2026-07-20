@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Camera, Download, ImagePlus, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Camera, Download, ImagePlus, Pencil, Plus, ScanBarcode, Trash2, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { BarcodeCapture } from "@/components/BarcodeCapture";
 import { ProductThumb } from "@/components/ProductThumb";
 import {
   Field,
@@ -27,6 +28,7 @@ export default function InventarioPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [barcode, setBarcode] = useState("");
   const [costPrice, setCostPrice] = useState("");
   const [price, setPrice] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -39,11 +41,16 @@ export default function InventarioPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return branchProducts;
-    return branchProducts.filter((p) => p.name.toLowerCase().includes(q));
+    return branchProducts.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        (p.barcode ?? "").toLowerCase().includes(q),
+    );
   }, [branchProducts, query]);
   function closeModal() {
     setOpen(false);
     setName("");
+    setBarcode("");
     setCostPrice("");
     setPrice("");
     setQuantity("");
@@ -55,6 +62,7 @@ export default function InventarioPage() {
   function openCreate() {
     setEditing(null);
     setName("");
+    setBarcode("");
     setCostPrice("");
     setPrice("");
     setQuantity("");
@@ -65,6 +73,7 @@ export default function InventarioPage() {
   function startEdit(product: Product) {
     setEditing(product);
     setName(product.name);
+    setBarcode(product.barcode ?? "");
     setCostPrice(String(getCostPrice(product)));
     setPrice(String(product.price));
     setQuantity(String(product.quantity));
@@ -94,8 +103,13 @@ export default function InventarioPage() {
       setError("Agrega una fotografía del producto.");
       return;
     }
+    if (!barcode.trim()) {
+      setError("Escanea o escribe el código de barras del producto.");
+      return;
+    }
     const payload = {
       name,
+      barcode: barcode.trim(),
       costPrice: Number(costPrice),
       price: Number(price),
       quantity: Number(quantity),
@@ -131,6 +145,13 @@ export default function InventarioPage() {
     };
   }, [open]);
   return (
+    <BarcodeCapture
+      onDetected={(code) => {
+        setBarcode(code);
+        setError(null);
+      }}
+    >
+      {({ openCamera, busy }) => (
     <AppShell
       title="Inventario"
       subtitle={`Control de productos en ${currentBranchName}. Listado y descarga PDF.`}
@@ -197,6 +218,11 @@ export default function InventarioPage() {
                       <p className="font-semibold leading-snug">
                         {product.name}
                       </p>
+                      {product.barcode ? (
+                        <p className="mt-0.5 font-mono text-[11px] text-[var(--muted)]">
+                          {product.barcode}
+                        </p>
+                      ) : null}
                       <p className="mt-1 text-sm text-[var(--brand)]">
                         Venta {formatMoney(product.price)}
                       </p>
@@ -283,7 +309,14 @@ export default function InventarioPage() {
                         alt={product.name}
                         size="sm"
                       />
-                      <span className="font-medium">{product.name}</span>
+                      <span>
+                        <span className="block font-medium">{product.name}</span>
+                        {product.barcode ? (
+                          <span className="font-mono text-[11px] text-[var(--muted)]">
+                            {product.barcode}
+                          </span>
+                        ) : null}
+                      </span>
                     </div>
                   </td>
                   <td className="py-3">
@@ -477,6 +510,35 @@ export default function InventarioPage() {
                   required
                 />
               </Field>
+              <Field label="Código de barras">
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      className={`${inputClass} text-base sm:text-sm`}
+                      value={barcode}
+                      onChange={(e) => setBarcode(e.target.value)}
+                      placeholder="Obligatorio"
+                      inputMode="numeric"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className={`${buttonPrimary} min-h-11 w-11 shrink-0 px-0`}
+                      onClick={openCamera}
+                      disabled={busy}
+                      aria-label={busy ? "Leyendo código…" : "Escanear código de barras"}
+                      title={busy ? "Leyendo código…" : "Escanear código"}
+                    >
+                      <ScanBarcode size={18} />
+                    </button>
+                  </div>
+                  {barcode ? (
+                    <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                      Código listo: <span className="font-mono font-semibold">{barcode}</span>
+                    </p>
+                  ) : null}
+                </div>
+              </Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Precio costo (Q)">
                   <div className="relative">
@@ -554,5 +616,7 @@ export default function InventarioPage() {
         </div>
       ) : null}
     </AppShell>
+      )}
+    </BarcodeCapture>
   );
 }
