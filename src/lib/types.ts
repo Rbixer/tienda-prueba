@@ -1,9 +1,24 @@
 export type Role = "administrador" | "vendedor";
+
+/** Permisos por módulo del sistema. */
+export type Permission =
+  | "dashboard"
+  | "pos"
+  | "inventario"
+  | "reportes"
+  | "bodega"
+  | "sucursales"
+  | "usuarios"
+  | "configuracion";
+
 export type Branch = {
   id: string;
   name: string;
   address: string;
+  /** Si true, es la bodega central (no es tienda de venta) */
+  isWarehouse?: boolean;
 };
+
 export type User = {
   id: string;
   name: string;
@@ -11,7 +26,10 @@ export type User = {
   password: string;
   role: Role;
   branchId: string;
+  /** Módulos a los que puede acceder (admin siempre tiene todos) */
+  permissions: Permission[];
 };
+
 export type Product = {
   id: string;
   name: string;
@@ -27,6 +45,7 @@ export type Product = {
   createdAt: string;
   updatedAt: string;
 };
+
 export type SaleItem = {
   productId: string;
   name: string;
@@ -34,6 +53,7 @@ export type SaleItem = {
   quantity: number;
   image?: string;
 };
+
 export type Sale = {
   id: string;
   branchId: string;
@@ -43,16 +63,69 @@ export type Sale = {
   total: number;
   createdAt: string;
 };
+
+export type TransferItem = {
+  productId: string;
+  barcode?: string;
+  name: string;
+  quantity: number;
+  costPrice: number;
+  price: number;
+  image?: string;
+};
+
+export type Transfer = {
+  id: string;
+  fromBranchId: string;
+  toBranchId: string;
+  items: TransferItem[];
+  userId: string;
+  userName: string;
+  note?: string;
+  createdAt: string;
+};
+
+export type PdfTextStyle = {
+  bold?: boolean;
+  italic?: boolean;
+  /** Color hex, ej. #0b2545 */
+  color?: string;
+};
+
+export type PdfStyleSettings = {
+  companyName?: PdfTextStyle;
+  slogan?: PdfTextStyle;
+  contact?: PdfTextStyle;
+  /** Color de la barra superior y encabezados de tabla */
+  accentColor?: string;
+};
+
+export type CompanySettings = {
+  companyName: string;
+  /** Slogan o eslogan que aparece bajo el nombre en documentos */
+  slogan?: string;
+  address?: string;
+  phone?: string;
+  /** Data URL o ruta pública del logo */
+  logo?: string;
+  /** Estilos tipográficos para los PDFs */
+  pdfStyle?: PdfStyleSettings;
+};
+
 export type Session = {
   userId: string;
   name: string;
   username: string;
   role: Role;
   branchId: string;
+  permissions: Permission[];
 };
+
 export type StoreData = {
   branches: Branch[];
   users: User[];
   products: Product[];
   sales: Sale[];
+  transfers: Transfer[];
+  settings: CompanySettings;
 };

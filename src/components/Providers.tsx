@@ -1,5 +1,7 @@
 "use client";
 import { AuthProvider } from "@/context/AuthContext";
+import { ToastProvider } from "@/components/toast/ToastContext";
+import { SessionIdleWatcher } from "@/components/SessionIdleWatcher";
 import { useEffect } from "react";
 function PwaRegister() {
   useEffect(() => {
@@ -23,8 +25,11 @@ function PwaRegister() {
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
-      <PwaRegister />
-      {children}
+      <ToastProvider>
+        <PwaRegister />
+        <SessionIdleWatcher />
+        {children}
+      </ToastProvider>
     </AuthProvider>
   );
 }

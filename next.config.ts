@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Permite abrir la app desde el celular por IP en desarrollo
   allowedDevOrigins: ["192.168.0.21", "127.0.0.1", "localhost"],
+  // Oculta el badge "N" que tapa la barra inferior en móvil
+  devIndicators: false,
   experimental: {
     proxyClientMaxBodySize: "15mb",
     serverActions: {

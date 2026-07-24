@@ -1,30 +1,141 @@
 "use client";
 import { useEffect, useState, type FormEvent } from "react";
-import { Trash2, UserPlus } from "lucide-react";
+import { Check, Pencil, Trash2, UserPlus, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { GuardAdmin } from "@/components/GuardAdmin";
 import {
   Field,
   Panel,
   buttonPrimary,
+  buttonSecondary,
   inputClass,
 } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
-import type { Role } from "@/lib/types";
+import { useToast } from "@/components/toast/ToastContext";
+import {
+  PERMISSION_CATALOG,
+  defaultPermissionsForRole,
+} from "@/lib/permissions";
+import type { Permission, Role, User } from "@/lib/types";
+
+function PermissionPicker({
+  role,
+  value,
+  onChange,
+  disabled,
+}: {
+  role: Role;
+  value: Permission[];
+  onChange: (next: Permission[]) => void;
+  disabled?: boolean;
+}) {
+  const locked = role === "administrador" || disabled;
+  const selected = new Set(
+    role === "administrador" ? PERMISSION_CATALOG.map((p) => p.id) : value,
+  );
+
+  function toggle(id: Permission) {
+    if (locked || id === "dashboard") return;
+    const next = selected.has(id)
+      ? value.filter((p) => p !== id)
+      : [...value, id];
+    if (!next.includes("dashboard")) next.unshift("dashboard");
+    onChange(next);
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+          Permisos de módulos
+        </p>
+        {locked ? (
+          <span className="rounded-md bg-[var(--brand-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--brand)]">
+            Acceso total
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="text-[11px] font-semibold text-[var(--brand)] hover:underline"
+            onClick={() => onChange(defaultPermissionsForRole("vendedor"))}
+          >
+            Restaurar típicos
+          </button>
+        )}
+      </div>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {PERMISSION_CATALOG.map((perm) => {
+          const on = selected.has(perm.id);
+          const isDash = perm.id === "dashboard";
+          return (
+            <button
+              key={perm.id}
+              type="button"
+              disabled={locked || isDash}
+              onClick={() => toggle(perm.id)}
+              className={`flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-left transition ${
+                on
+                  ? "border-[var(--brand)]/40 bg-[var(--brand-soft)]"
+                  : "border-[var(--line)] bg-white hover:border-[var(--brand)]/30"
+              } ${locked || isDash ? "cursor-default opacity-90" : ""}`}
+            >
+              <span
+                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${
+                  on
+                    ? "bg-[var(--brand)] text-white"
+                    : "border border-[var(--line)] bg-white text-transparent"
+                }`}
+              >
+                <Check size={12} strokeWidth={3} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold leading-tight">
+                  {perm.label}
+                </span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-[var(--muted)]">
+                  {perm.description}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function UsuariosPage() {
-  const { data, createUser, deleteUser } = useAuth();
+  const { data, createUser, updateUser, deleteUser, storeBranches, session } =
+    useAuth();
+  const toast = useToast();
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("vendedor");
   const [branchId, setBranchId] = useState("");
+  const [permissions, setPermissions] = useState<Permission[]>(
+    defaultPermissionsForRole("vendedor"),
+  );
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [editing, setEditing] = useState<User | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editRole, setEditRole] = useState<Role>("vendedor");
+  const [editBranchId, setEditBranchId] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editPermissions, setEditPermissions] = useState<Permission[]>([]);
+
   useEffect(() => {
-    if (!branchId && data.branches[0]) {
-      setBranchId(data.branches[0].id);
+    if (!branchId && storeBranches[0]) {
+      setBranchId(storeBranches[0].id);
     }
-  }, [branchId, data.branches]);
+  }, [branchId, storeBranches]);
+
+  function onRoleChange(next: Role) {
+    setRole(next);
+    setPermissions(defaultPermissionsForRole(next));
+  }
+
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     const err = createUser({
@@ -33,26 +144,95 @@ export default function UsuariosPage() {
       password,
       role,
       branchId,
+      permissions,
     });
     if (err) {
       setError(err);
       setOk(null);
+      toast.error(err, "Usuarios");
       return;
     }
     setError(null);
     setOk("Usuario creado correctamente.");
+    toast.success("Usuario creado correctamente.", "Usuarios");
     setName("");
     setUsername("");
     setPassword("");
     setRole("vendedor");
+    setPermissions(defaultPermissionsForRole("vendedor"));
   }
+
+  function openEdit(user: User) {
+    setEditing(user);
+    setEditName(user.name);
+    setEditRole(user.role);
+    setEditBranchId(user.branchId);
+    setEditPassword("");
+    setEditPermissions(
+      user.permissions?.length
+        ? [...user.permissions]
+        : defaultPermissionsForRole(user.role),
+    );
+  }
+
+  function onEditRoleChange(next: Role) {
+    setEditRole(next);
+    setEditPermissions(defaultPermissionsForRole(next));
+  }
+
+  function saveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editing) return;
+    const err = updateUser(editing.id, {
+      name: editName,
+      role: editRole,
+      branchId: editBranchId,
+      password: editPassword || undefined,
+      permissions: editPermissions,
+    });
+    if (err) {
+      toast.error(err, "Usuarios");
+      return;
+    }
+    toast.success(`Permisos de “${editName}” actualizados.`, "Usuarios");
+    setEditing(null);
+  }
+
+  async function askDeleteUser(userId: string, userName: string) {
+    const accepted = await toast.confirm({
+      title: "Eliminar usuario",
+      message: `¿Eliminar a “${userName}” del sistema?`,
+      confirmLabel: "Eliminar",
+      cancelLabel: "Cancelar",
+      tone: "danger",
+    });
+    if (!accepted) return;
+    const err = deleteUser(userId);
+    if (err) {
+      toast.error(err, "Usuarios");
+      return;
+    }
+    toast.success(`“${userName}” eliminado.`, "Usuarios");
+  }
+
+  function permissionLabels(user: User) {
+    if (user.role === "administrador") return "Todos";
+    const list = user.permissions ?? [];
+    if (list.length === 0) return "Sin permisos";
+    return list
+      .map((id) => PERMISSION_CATALOG.find((p) => p.id === id)?.label ?? id)
+      .join(", ");
+  }
+
+  const canCreateAdmin = session?.role === "administrador";
+
   return (
     <AppShell
       title="Usuarios"
-      subtitle="Crea cuentas de administrador o vendedor y asígnalas a una sucursal."
+      subtitle="Crea cuentas y asigna permisos por módulo a cada persona."
     >
       <GuardAdmin>
-        <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,22rem)_1fr]">
+        <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,24rem)_1fr]">
           <Panel className="order-1 h-fit">
             <div className="mb-4 flex items-center gap-2">
               <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[var(--brand-soft)] text-[var(--brand)]">
@@ -99,10 +279,12 @@ export default function UsuariosPage() {
                   <select
                     className={`${inputClass} min-h-11 text-base sm:text-sm`}
                     value={role}
-                    onChange={(e) => setRole(e.target.value as Role)}
+                    onChange={(e) => onRoleChange(e.target.value as Role)}
                   >
                     <option value="vendedor">Vendedor</option>
-                    <option value="administrador">Administrador</option>
+                    {canCreateAdmin ? (
+                      <option value="administrador">Administrador</option>
+                    ) : null}
                   </select>
                 </Field>
                 <Field label="Sucursal">
@@ -111,7 +293,7 @@ export default function UsuariosPage() {
                     value={branchId}
                     onChange={(e) => setBranchId(e.target.value)}
                   >
-                    {data.branches.map((branch) => (
+                    {storeBranches.map((branch) => (
                       <option key={branch.id} value={branch.id}>
                         {branch.name}
                       </option>
@@ -119,6 +301,13 @@ export default function UsuariosPage() {
                   </select>
                 </Field>
               </div>
+
+              <PermissionPicker
+                role={role}
+                value={permissions}
+                onChange={setPermissions}
+              />
+
               {error ? (
                 <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
                   {error}
@@ -137,11 +326,12 @@ export default function UsuariosPage() {
               </button>
             </form>
           </Panel>
+
           <Panel className="order-2 flex min-h-0 flex-col lg:h-full">
             <h2 className="shrink-0 font-[family-name:var(--font-display)] text-lg font-semibold sm:text-xl">
               Equipo ({data.users.length})
             </h2>
-            {/* Vista móvil: tarjetas */}
+
             <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto md:hidden">
               {data.users.map((user) => {
                 const branch = data.branches.find(
@@ -169,21 +359,33 @@ export default function UsuariosPage() {
                         {user.role}
                       </span>
                     </div>
+                    <p className="mt-2 line-clamp-2 text-[11px] text-[var(--muted)]">
+                      {permissionLabels(user)}
+                    </p>
                     <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-3">
                       <p className="truncate text-xs text-[var(--muted)]">
                         {branch?.name ?? "Sin sucursal"}
                       </p>
-                      <button
-                        type="button"
-                        className="rounded-lg bg-white p-2.5 text-[var(--muted)] shadow-sm hover:text-red-600"
-                        onClick={() => {
-                          const err = deleteUser(user.id);
-                          if (err) alert(err);
-                        }}
-                        aria-label="Eliminar usuario"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="rounded-lg bg-white p-2.5 text-[var(--muted)] shadow-sm hover:text-[var(--brand)]"
+                          onClick={() => openEdit(user)}
+                          aria-label="Editar permisos"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg bg-white p-2.5 text-[var(--muted)] shadow-sm hover:text-red-600"
+                          onClick={() => {
+                            void askDeleteUser(user.id, user.name);
+                          }}
+                          aria-label="Eliminar usuario"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -194,14 +396,15 @@ export default function UsuariosPage() {
                 </p>
               ) : null}
             </div>
-            {/* Vista escritorio: tabla */}
+
             <div className="mt-3 hidden min-h-0 flex-1 overflow-auto md:block">
-              <table className="w-full min-w-[560px] text-left text-sm">
+              <table className="w-full min-w-[640px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-[var(--line)] text-xs uppercase tracking-wide text-[var(--muted)]">
                     <th className="pb-2 font-medium">Nombre</th>
                     <th className="pb-2 font-medium">Usuario</th>
                     <th className="pb-2 font-medium">Rol</th>
+                    <th className="pb-2 font-medium">Permisos</th>
                     <th className="pb-2 font-medium">Sucursal</th>
                     <th className="pb-2 font-medium" />
                   </tr>
@@ -219,16 +422,28 @@ export default function UsuariosPage() {
                         <td className="py-3 font-medium">{user.name}</td>
                         <td className="py-3">{user.username}</td>
                         <td className="py-3 capitalize">{user.role}</td>
+                        <td className="max-w-[14rem] py-3 text-xs text-[var(--muted)]">
+                          <span className="line-clamp-2">
+                            {permissionLabels(user)}
+                          </span>
+                        </td>
                         <td className="py-3">
                           {branch?.name ?? "Sin sucursal"}
                         </td>
                         <td className="py-3 text-right">
                           <button
                             type="button"
+                            className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand)]"
+                            onClick={() => openEdit(user)}
+                            aria-label="Editar permisos"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            type="button"
                             className="rounded-lg p-2 text-[var(--muted)] hover:bg-red-50 hover:text-red-600"
                             onClick={() => {
-                              const err = deleteUser(user.id);
-                              if (err) alert(err);
+                              void askDeleteUser(user.id, user.name);
                             }}
                             aria-label="Eliminar usuario"
                           >
@@ -243,6 +458,110 @@ export default function UsuariosPage() {
             </div>
           </Panel>
         </div>
+
+        {editing ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center">
+            <form
+              onSubmit={saveEdit}
+              className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-4 shadow-xl sm:p-5"
+            >
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+                    Editar usuario
+                  </h3>
+                  <p className="text-sm text-[var(--muted)]">
+                    @{editing.username}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--bg-soft)]"
+                  onClick={() => setEditing(null)}
+                  aria-label="Cerrar"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <Field label="Nombre completo">
+                  <input
+                    className={inputClass}
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    required
+                  />
+                </Field>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label="Rol">
+                    <select
+                      className={inputClass}
+                      value={editRole}
+                      onChange={(e) =>
+                        onEditRoleChange(e.target.value as Role)
+                      }
+                      disabled={
+                        editing.id === "usr-admin" ||
+                        (!canCreateAdmin && editing.role === "administrador")
+                      }
+                    >
+                      <option value="vendedor">Vendedor</option>
+                      {canCreateAdmin || editRole === "administrador" ? (
+                        <option value="administrador">Administrador</option>
+                      ) : null}
+                    </select>
+                  </Field>
+                  <Field label="Sucursal">
+                    <select
+                      className={inputClass}
+                      value={editBranchId}
+                      onChange={(e) => setEditBranchId(e.target.value)}
+                    >
+                      {data.branches
+                        .filter((b) => !b.isWarehouse)
+                        .map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </option>
+                        ))}
+                    </select>
+                  </Field>
+                </div>
+                <Field label="Nueva contraseña (opcional)">
+                  <input
+                    type="password"
+                    className={inputClass}
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                    placeholder="Dejar vacío para no cambiar"
+                    autoComplete="new-password"
+                  />
+                </Field>
+
+                <PermissionPicker
+                  role={editRole}
+                  value={editPermissions}
+                  onChange={setEditPermissions}
+                  disabled={editing.id === "usr-admin"}
+                />
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    className={`${buttonSecondary} flex-1`}
+                    onClick={() => setEditing(null)}
+                  >
+                    Cancelar
+                  </button>
+                  <button type="submit" className={`${buttonPrimary} flex-1`}>
+                    Guardar
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        ) : null}
       </GuardAdmin>
     </AppShell>
   );

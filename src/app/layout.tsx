@@ -23,8 +23,11 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "MI BARRIO",
+  },
+  formatDetection: {
+    telephone: false,
   },
   icons: {
     icon: [
@@ -36,11 +39,16 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f766e",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#171a21" },
+    { media: "(prefers-color-scheme: dark)", color: "#171a21" },
+  ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
+  colorScheme: "light",
 };
 
 export default function RootLayout({
@@ -53,7 +61,7 @@ export default function RootLayout({
       lang="es-GT"
       className={`${sans.variable} ${display.variable} h-full`}
     >
-      <body className="min-h-full font-sans antialiased">
+      <body className="min-h-full overflow-x-hidden font-sans antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>

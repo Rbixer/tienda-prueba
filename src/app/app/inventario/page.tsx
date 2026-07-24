@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Camera, Download, ImagePlus, Pencil, Plus, ScanBarcode, Trash2, X } from "lucide-react";
+import { Camera, ImagePlus, Pencil, Plus, ScanBarcode, Trash2, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { BarcodeCapture } from "@/components/BarcodeCapture";
 import { ProductThumb } from "@/components/ProductThumb";
@@ -12,10 +12,57 @@ import {
   inputClass,
 } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/components/toast/ToastContext";
 import { compressImageFile } from "@/lib/image";
+import { downloadInventoryExcel, parseInventoryExcel } from "@/lib/excel";
 import { formatMoney, getCostPrice } from "@/lib/store";
 import { downloadInventoryPdf } from "@/lib/pdf";
 import type { Product } from "@/lib/types";
+
+function ExcelLogo({ size = 18 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden
+    >
+      <rect x="3" y="2" width="18" height="20" rx="2.5" fill="#217346" />
+      <path
+        d="M7.2 7.2h9.6v1.6H7.2V7.2Zm0 4h9.6v1.6H7.2v-1.6Zm0 4h6.4v1.6H7.2v-1.6Z"
+        fill="#fff"
+        opacity="0.35"
+      />
+      <path
+        d="M8.1 7.4 12 12l-3.9 4.6h2.2L12.9 13l2.5 3.9h2.2L13.7 12l3.9-4.6h-2.2L12.9 11 10.3 7.4H8.1Z"
+        fill="#fff"
+      />
+    </svg>
+  );
+}
+
+function PdfLogo({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden
+    >
+      <path
+        d="M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"
+        fill="#E11D48"
+      />
+      <path d="M14 2v4h4" fill="#FB7185" />
+      <path
+        d="M7.5 15.5V9.2h2.1c1.2 0 1.9.6 1.9 1.55 0 .95-.7 1.55-1.9 1.55H8.7v3.2H7.5Zm1.2-4.3h.8c.45 0 .75-.2.75-.55s-.3-.55-.75-.55h-.8v1.1Zm4.15 4.3c-1.25 0-2-.75-2-1.95v-2.4c0-1.2.75-1.95 2-1.95s2 .75 2 1.95v2.4c0 1.2-.75 1.95-2 1.95Zm0-1.1c.45 0 .75-.35.75-.85v-2.4c0-.5-.3-.85-.75-.85s-.75.35-.75.85v2.4c0 .5.3.85.75.85Zm3.05 1.1V9.2h1.2v5.2c0 1.05.45 1.35 1.15 1.35.15 0 .35 0 .5-.05v1.05c-.2.05-.45.1-.7.1-1.35 0-2.15-.7-2.15-2.15Z"
+        fill="#fff"
+      />
+    </svg>
+  );
+}
 export default function InventarioPage() {
   const {
     branchProducts,
@@ -23,9 +70,13 @@ export default function InventarioPage() {
     addProduct,
     updateProduct,
     deleteProduct,
+    importProducts,
     session,
+    data,
   } = useAuth();
+  const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const excelImportRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [barcode, setBarcode] = useState("");
@@ -36,7 +87,10 @@ export default function InventarioPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [query, setQuery] = useState("");
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<"pdf" | "excel" | null>(null);
+  const [exportFormat, setExportFormat] = useState<"excel" | "pdf">("excel");
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
   const [loadingImage, setLoadingImage] = useState(false);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -124,12 +178,72 @@ export default function InventarioPage() {
     }
     closeModal();
   }
-  async function onDownload() {
-    setDownloading(true);
+  async function onDownloadPdf() {
+    setDownloading("pdf");
     try {
-      await downloadInventoryPdf(branchProducts, currentBranchName);
+      await downloadInventoryPdf({
+        products: branchProducts,
+        branchName: currentBranchName,
+        companyName: data.settings?.companyName,
+        slogan: data.settings?.slogan,
+        address: data.settings?.address,
+        phone: data.settings?.phone,
+        logoDataUrl: data.settings?.logo,
+        pdfStyle: data.settings?.pdfStyle,
+      });
     } finally {
-      setDownloading(false);
+      setDownloading(null);
+    }
+  }
+  async function onDownloadExcel() {
+    setDownloading("excel");
+    try {
+      await downloadInventoryExcel(
+        branchProducts,
+        currentBranchName,
+        data.settings?.companyName,
+      );
+    } finally {
+      setDownloading(null);
+    }
+  }
+  async function onImportExcel(file: File | undefined) {
+    if (!file) return;
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const { rows } = await parseInventoryExcel(file);
+      const result = importProducts(rows);
+      if (result.error) {
+        setImportMsg(result.error);
+        toast.error(result.error, "Importación");
+        return;
+      }
+      const msg = `Importado: ${result.created} nuevo(s), ${result.updated} actualizado(s).`;
+      setImportMsg(msg);
+      toast.success(msg, "Inventario");
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "No se pudo leer el Excel.";
+      setImportMsg(msg);
+      toast.error(msg, "Importación");
+    } finally {
+      setImporting(false);
+      if (excelImportRef.current) excelImportRef.current.value = "";
+    }
+  }
+
+  async function askDelete(product: Product) {
+    const ok = await toast.confirm({
+      title: "Eliminar producto",
+      message: `¿Eliminar “${product.name}” del inventario? Esta acción no se puede deshacer.`,
+      confirmLabel: "Eliminar",
+      cancelLabel: "Cancelar",
+      tone: "danger",
+    });
+    if (ok) {
+      deleteProduct(product.id);
+      toast.success(`“${product.name}” eliminado.`, "Inventario");
     }
   }
   useEffect(() => {
@@ -154,7 +268,7 @@ export default function InventarioPage() {
       {({ openCamera, busy }) => (
     <AppShell
       title="Inventario"
-      subtitle={`Control de productos en ${currentBranchName}. Listado y descarga PDF.`}
+      subtitle={`Control de productos en ${currentBranchName}. Importa o descarga Excel / PDF.`}
     >
       <Panel className="flex min-h-0 flex-1 flex-col">
         <div className="mb-3 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -167,21 +281,81 @@ export default function InventarioPage() {
               {filtered.length === 1 ? "" : "s"}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              ref={excelImportRef}
+              type="file"
+              accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+              className="hidden"
+              onChange={(e) => onImportExcel(e.target.files?.[0])}
+            />
             <button
               type="button"
-              className={`${buttonSecondary} min-h-11 flex-1 sm:flex-none`}
-              onClick={onDownload}
-              disabled={downloading || branchProducts.length === 0}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-semibold text-[var(--ink)] transition hover:bg-[var(--bg-soft)] disabled:opacity-50 sm:px-3.5"
+              onClick={() => excelImportRef.current?.click()}
+              disabled={importing || !!downloading}
+              title="Subir Excel al inventario"
+              aria-label="Subir Excel"
             >
-              <Download size={16} />
+              <ExcelLogo size={20} />
               <span className="hidden sm:inline">
-                {downloading ? "Generando..." : "Descargar PDF"}
-              </span>
-              <span className="sm:hidden">
-                {downloading ? "..." : "PDF"}
+                {importing ? "Importando..." : "Subir"}
               </span>
             </button>
+
+            <div
+              className="relative inline-flex min-h-11 min-w-[10.5rem] flex-1 overflow-hidden rounded-md border border-[var(--line)] bg-[var(--bg-soft)] p-1 sm:flex-none sm:min-w-[11.5rem]"
+              role="group"
+              aria-label="Descargar inventario"
+            >
+              <span
+                className={`pointer-events-none absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-md bg-white shadow-sm ring-1 ring-[var(--line)] transition-transform duration-300 ease-out ${
+                  exportFormat === "pdf"
+                    ? "translate-x-[calc(100%+0.25rem)]"
+                    : "translate-x-0"
+                }`}
+                aria-hidden
+              />
+              <button
+                type="button"
+                className={`relative z-10 inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-sm font-semibold transition-colors ${
+                  exportFormat === "excel"
+                    ? "text-[var(--ink)]"
+                    : "text-[var(--muted)]"
+                }`}
+                disabled={!!downloading || importing}
+                onClick={() => {
+                  setExportFormat("excel");
+                  void onDownloadExcel();
+                }}
+              >
+                <ExcelLogo size={16} />
+                <span>
+                  {downloading === "excel" ? "..." : "Excel"}
+                </span>
+              </button>
+              <button
+                type="button"
+                className={`relative z-10 inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-sm font-semibold transition-colors ${
+                  exportFormat === "pdf"
+                    ? "text-[var(--ink)]"
+                    : "text-[var(--muted)]"
+                }`}
+                disabled={
+                  !!downloading ||
+                  importing ||
+                  branchProducts.length === 0
+                }
+                onClick={() => {
+                  setExportFormat("pdf");
+                  void onDownloadPdf();
+                }}
+              >
+                <PdfLogo size={15} />
+                <span>{downloading === "pdf" ? "..." : "PDF"}</span>
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={openCreate}
@@ -194,6 +368,17 @@ export default function InventarioPage() {
             </button>
           </div>
         </div>
+        {importMsg ? (
+          <p
+            className={`mb-3 shrink-0 rounded-xl px-3 py-2 text-sm ${
+              importMsg.startsWith("Importado")
+                ? "bg-emerald-50 text-emerald-800"
+                : "bg-red-50 text-red-700"
+            }`}
+          >
+            {importMsg}
+          </p>
+        ) : null}
         <input
           className={`${inputClass} mb-3 shrink-0 text-base sm:text-sm`}
           placeholder="Buscar producto..."
@@ -261,13 +446,7 @@ export default function InventarioPage() {
                       type="button"
                       className="rounded-lg bg-white p-2.5 text-[var(--muted)] shadow-sm hover:text-red-600"
                       onClick={() => {
-                        if (
-                          confirm(
-                            `¿Eliminar "${product.name}" del inventario?`,
-                          )
-                        ) {
-                          deleteProduct(product.id);
-                        }
+                        void askDelete(product);
                       }}
                       aria-label="Eliminar"
                     >
@@ -354,13 +533,7 @@ export default function InventarioPage() {
                           type="button"
                           className="rounded-lg p-2 text-[var(--muted)] hover:bg-red-50 hover:text-red-600"
                           onClick={() => {
-                            if (
-                              confirm(
-                                `¿Eliminar "${product.name}" del inventario?`,
-                              )
-                            ) {
-                              deleteProduct(product.id);
-                            }
+                            void askDelete(product);
                           }}
                           aria-label="Eliminar"
                         >
@@ -391,7 +564,7 @@ export default function InventarioPage() {
         className="fixed z-40 flex h-14 w-14 items-center justify-center rounded-md bg-[var(--brand)] text-white  transition hover:bg-[var(--brand-dark)] md:hidden"
         style={{
           right: "max(1rem, env(safe-area-inset-right))",
-          bottom: "calc(5.25rem + env(safe-area-inset-bottom))",
+          bottom: "calc(4.5rem + env(safe-area-inset-bottom))",
         }}
         aria-label="Agregar producto"
       >

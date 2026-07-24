@@ -6,15 +6,15 @@ import { Panel, buttonPrimary } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { formatMoney, getCostPrice } from "@/lib/store";
 export default function SucursalesPage() {
-  const { data, session, setActiveBranch } = useAuth();
+  const { data, session, setActiveBranch, storeBranches } = useAuth();
   return (
     <AppShell
       title="Sucursales"
-      subtitle="Administra las 3 sucursales y cambia la ubicación activa para operar inventario y POS."
+      subtitle="Administra las sucursales y cambia la ubicación activa para operar inventario y POS."
     >
       <GuardAdmin>
         <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-3 md:items-stretch">
-          {data.branches.map((branch) => {
+          {storeBranches.map((branch) => {
             const products = data.products.filter(
               (p) => p.branchId === branch.id,
             );
@@ -95,6 +95,9 @@ export default function SucursalesPage() {
             );
           })}
         </div>
+        <p className="mt-3 text-xs text-[var(--muted)]">
+          La Bodega Central se gestiona desde el módulo Bodega (traslados).
+        </p>
       </GuardAdmin>
     </AppShell>
   );

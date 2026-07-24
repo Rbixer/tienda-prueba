@@ -9,55 +9,55 @@ const shortLabel: Record<string, string> = {
   Reportes: "Ventas",
   Sucursales: "Locales",
   Usuarios: "Equipo",
+  Configuración: "Config",
+  Bodega: "Bodega",
 };
 
 export function BottomNav() {
   const pathname = usePathname();
   const { session } = useAuth();
-  const items = getNavItems(session?.role);
-  const compact = items.length > 4;
+  const items = getNavItems(session);
+  // En móvil siempre scroll horizontal si hay más de 4, para que no se aplaste
+  const scroll = items.length > 4;
+
   return (
-    <nav
-      className="fixed inset-x-2 bottom-2 z-50 rounded-2xl glass-strong md:hidden"
-      style={{
-        paddingLeft: "max(0px, env(safe-area-inset-left))",
-        paddingRight: "max(0px, env(safe-area-inset-right))",
-        paddingBottom: "max(4px, env(safe-area-inset-bottom))",
-      }}
-    >
+    <nav className="app-shell__bottom z-50 shrink-0 border-t border-[var(--line)] bg-white md:hidden">
       <ul
-        className="grid w-full items-stretch"
-        style={{
-          gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))`,
-        }}
+        className={`bottom-nav-scroll w-full ${
+          scroll
+            ? "flex items-stretch gap-0.5 overflow-x-auto overscroll-x-contain px-1 py-0.5"
+            : "grid"
+        }`}
+        style={
+          scroll
+            ? undefined
+            : {
+                gridTemplateColumns: `repeat(${Math.max(items.length, 1)}, minmax(0, 1fr))`,
+              }
+        }
       >
         {items.map(({ href, label, icon: Icon }) => {
           const active = isNavActive(pathname, href);
-          const text = compact ? (shortLabel[label] ?? label) : label;
+          const text = scroll ? (shortLabel[label] ?? label) : label;
           return (
-            <li key={href} className="min-w-0">
+            <li
+              key={href}
+              className={scroll ? "w-[4.5rem] shrink-0" : "min-w-0"}
+            >
               <Link
                 href={href}
-                className={`relative flex h-full min-h-[3.4rem] flex-col items-center justify-center gap-0.5 px-0.5 py-2 transition ${
-                  active
-                    ? "text-[var(--brand)]"
-                    : "text-[var(--muted)] active:bg-white/30"
+                className={`flex min-h-[3.25rem] flex-col items-center justify-center gap-0.5 px-1 py-1.5 transition active:scale-[0.97] ${
+                  active ? "text-[var(--brand)]" : "text-[var(--muted)]"
                 }`}
               >
-                {active ? (
-                  <span className="absolute inset-x-3 top-1 h-1 rounded-full bg-[linear-gradient(90deg,#14b8a6,#22d3ee)]" />
-                ) : null}
-                <Icon
-                  size={compact ? 18 : 20}
-                  strokeWidth={active ? 2.5 : 2}
-                  aria-hidden
-                  className="shrink-0"
-                />
                 <span
-                  className={`w-full truncate text-center font-semibold tracking-tight leading-tight ${
-                    compact ? "text-[9px]" : "text-[10px]"
+                  className={`flex h-7 w-7 items-center justify-center rounded-xl ${
+                    active ? "bg-[var(--brand-soft)]" : ""
                   }`}
                 >
+                  <Icon size={17} strokeWidth={active ? 2.4 : 2} />
+                </span>
+                <span className="w-full truncate text-center text-[9px] font-semibold leading-tight">
                   {text}
                 </span>
               </Link>

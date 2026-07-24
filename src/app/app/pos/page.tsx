@@ -157,8 +157,8 @@ export default function PosPage() {
       title="Punto de venta"
       subtitle={`POS sin facturación · ${currentBranchName}`}
     >
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-        <Panel className="flex min-h-0 flex-col lg:h-full">
+      <div className="grid min-h-0 flex-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <Panel className="flex min-h-0 w-full flex-col">
           <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
             <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
               Productos
@@ -227,11 +227,15 @@ export default function PosPage() {
                   const ok = addToCart(product.id);
                   if (ok) setMessage(`Agregado: ${product.name}`);
                 }}
-                className="flex gap-3 rounded-md border border-[var(--line)] bg-[var(--bg-soft)] p-3 text-left transition hover:border-[var(--brand)] hover:bg-white active:scale-[0.99]"
+                className="flex gap-3 rounded-2xl border border-[var(--line)] bg-white p-3 text-left shadow-sm transition hover:border-[var(--brand)] hover:shadow-md active:scale-[0.99]"
               >
-                <ProductThumb src={product.image} alt={product.name} />
-                <span className="min-w-0 flex-1">
-                  <p className="font-medium leading-snug">{product.name}</p>
+                <ProductThumb
+                  src={product.image}
+                  alt={product.name}
+                  size="xl"
+                />
+                <span className="min-w-0 flex-1 self-center">
+                  <p className="font-semibold leading-snug">{product.name}</p>
                   {product.barcode ? (
                     <p className="mt-0.5 font-mono text-[10px] text-[var(--muted)]">
                       {product.barcode}
@@ -259,9 +263,9 @@ export default function PosPage() {
             ) : null}
           </div>
         </Panel>
-        <div className="flex min-h-0 flex-col gap-3 lg:h-full">
-          <Panel className="flex min-h-0 flex-1 flex-col">
-            <div className="mb-3 flex shrink-0 items-center gap-2">
+        <aside className="flex min-h-0 w-full flex-col gap-3 self-start lg:sticky lg:top-3 lg:z-20 lg:max-h-[calc(100dvh-5.5rem)]">
+          <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden !p-3 sm:!p-4">
+            <div className="mb-2.5 flex shrink-0 items-center gap-2">
               <ShoppingBag size={18} className="text-[var(--brand)]" />
               <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
                 Carrito
@@ -363,7 +367,7 @@ export default function PosPage() {
               </div>
             </div>
           </Panel>
-          <Panel className="shrink-0">
+          <Panel className="shrink-0 !p-3 sm:!p-4">
             <h3 className="font-semibold">Últimas ventas</h3>
             <div className="mt-2 max-h-36 space-y-2 overflow-y-auto lg:max-h-40">
               {branchSales.slice(0, 6).map((sale) => (
@@ -389,7 +393,7 @@ export default function PosPage() {
               ) : null}
             </div>
           </Panel>
-        </div>
+        </aside>
       </div>
     </AppShell>
       )}
