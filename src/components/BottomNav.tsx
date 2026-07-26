@@ -11,6 +11,7 @@ const shortLabel: Record<string, string> = {
   Usuarios: "Equipo",
   Configuración: "Config",
   Bodega: "Bodega",
+  Proveedores: "Proveed.",
 };
 
 export function BottomNav() {

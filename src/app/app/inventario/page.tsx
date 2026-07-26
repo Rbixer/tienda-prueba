@@ -198,11 +198,12 @@ export default function InventarioPage() {
   async function onDownloadExcel() {
     setDownloading("excel");
     try {
-      await downloadInventoryExcel(
-        branchProducts,
-        currentBranchName,
-        data.settings?.companyName,
-      );
+      await downloadInventoryExcel(branchProducts, currentBranchName, {
+        companyName: data.settings?.companyName,
+        slogan: data.settings?.slogan,
+        address: data.settings?.address,
+        phone: data.settings?.phone,
+      });
     } finally {
       setDownloading(null);
     }

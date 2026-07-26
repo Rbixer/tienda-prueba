@@ -30,6 +30,12 @@ export function mergeStores(
   }
   const transfers = new Map((s.transfers ?? []).map((t) => [t.id, t]));
   for (const t of l.transfers ?? []) transfers.set(t.id, t);
+  const suppliers = new Map((s.suppliers ?? []).map((x) => [x.id, x]));
+  for (const x of l.suppliers ?? []) suppliers.set(x.id, x);
+  const supplierPayments = new Map(
+    (s.supplierPayments ?? []).map((x) => [x.id, x]),
+  );
+  for (const x of l.supplierPayments ?? []) supplierPayments.set(x.id, x);
   return normalizeStoreData({
     branches: s.branches.length ? s.branches : l.branches,
     users: Array.from(users.values()),
@@ -41,6 +47,13 @@ export function mergeStores(
     transfers: Array.from(transfers.values()).sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    ),
+    suppliers: Array.from(suppliers.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "es"),
+    ),
+    supplierPayments: Array.from(supplierPayments.values()).sort(
+      (a, b) =>
+        new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime(),
     ),
     settings: {
       companyName:

@@ -6,7 +6,7 @@ import { Panel, buttonPrimary } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { formatMoney, getCostPrice } from "@/lib/store";
 export default function SucursalesPage() {
-  const { data, session, setActiveBranch, storeBranches } = useAuth();
+  const { data, session, setActiveBranch, visibleBranches } = useAuth();
   return (
     <AppShell
       title="Sucursales"
@@ -14,11 +14,22 @@ export default function SucursalesPage() {
     >
       <GuardAdmin>
         <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-3 md:items-stretch">
-          {storeBranches.map((branch) => {
+          {visibleBranches.length === 0 ? (
+            <Panel className="md:col-span-3">
+              <p className="py-8 text-center text-sm text-[var(--muted)]">
+                No tienes tiendas asignadas. Pide al administrador que te dé acceso.
+              </p>
+            </Panel>
+          ) : null}
+          {visibleBranches.map((branch) => {
             const products = data.products.filter(
               (p) => p.branchId === branch.id,
             );
-            const users = data.users.filter((u) => u.branchId === branch.id);
+            const users = data.users.filter(
+              (u) =>
+                u.branchId === branch.id ||
+                u.allowedBranchIds?.includes(branch.id),
+            );
             const sales = data.sales.filter((s) => s.branchId === branch.id);
             const stockValue = products.reduce(
               (sum, p) => sum + getCostPrice(p) * p.quantity,

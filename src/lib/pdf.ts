@@ -1,4 +1,11 @@
-import type { PdfStyleSettings, PdfTextStyle, Product, Sale } from "@/lib/types";
+import type {
+  PdfStyleSettings,
+  PdfTextStyle,
+  Product,
+  Sale,
+  Supplier,
+  SupplierPayment,
+} from "@/lib/types";
 import {
   formatDate,
   formatMoney,
@@ -477,4 +484,556 @@ export async function downloadSalesPdf(
   doc.save(
     `ventas-${branchName.toLowerCase().replace(/\s+/g, "-")}-${periodLabel.toLowerCase().replace(/\s+/g, "-")}.pdf`,
   );
+}
+
+const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  efectivo: "Efectivo",
+  transferencia: "Transferencia",
+  cheque: "Cheque",
+  otro: "Otro",
+};
+
+type CompanyPdfMeta = {
+  companyName?: string;
+  slogan?: string;
+  address?: string;
+  phone?: string;
+  logoDataUrl?: string;
+  pdfStyle?: PdfStyleSettings;
+};
+
+/** Comprobante PDF de un solo pago a proveedor. */
+export async function downloadSupplierPaymentPdf(opts: {
+  payment: SupplierPayment;
+  supplier: Supplier;
+} & CompanyPdfMeta) {
+  const {
+    payment,
+    supplier,
+    companyName = "MI BARRIO",
+    slogan,
+    address,
+    phone,
+    logoDataUrl,
+    pdfStyle,
+  } = opts;
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const { margin, contentRight } = PAGE;
+
+  const header = await drawDocumentHeader(doc, {
+    companyName,
+    slogan,
+    address,
+    phone,
+    logoDataUrl,
+    pdfStyle,
+    documentTitle: "Comprobante de pago a proveedor",
+    sourceLines: [
+      `Proveedor: ${supplier.name}`,
+      `Fecha de emisión: ${new Date().toLocaleString("es-GT")}`,
+      `Fuente: módulo Proveedores · pago individual`,
+    ],
+  });
+  let y = header.y;
+  const accent = header.accent;
+
+  doc.setFillColor(...COLORS.softBg);
+  doc.roundedRect(margin, y, contentRight - margin, 42, 2, 2, "F");
+  y += 8;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...COLORS.muted);
+  doc.text("MONTO PAGADO", margin + 4, y);
+  y += 7;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(...accent);
+  doc.text(formatMoney(payment.amount), margin + 4, y);
+  y += 10;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(...COLORS.ink);
+  const rows: [string, string][] = [
+    ["Proveedor", supplier.name],
+    ["Método", PAYMENT_METHOD_LABEL[payment.method] ?? payment.method],
+    ["Fecha de pago", formatDate(payment.paidAt)],
+    ["Registrado por", payment.userName],
+  ];
+  if (payment.note) rows.push(["Nota", payment.note]);
+  if (supplier.phone) rows.push(["Tel. proveedor", supplier.phone]);
+
+  for (const [label, value] of rows) {
+    doc.setTextColor(...COLORS.muted);
+    doc.setFontSize(8);
+    doc.text(label.toUpperCase(), margin + 4, y);
+    doc.setTextColor(...COLORS.ink);
+    doc.setFontSize(10);
+    doc.text(value, margin + 48, y);
+    y += 6;
+  }
+
+  y += 8;
+  doc.setDrawColor(...COLORS.line);
+  doc.line(margin, y, contentRight, y);
+  y += 8;
+  doc.setFontSize(8);
+  doc.setTextColor(...COLORS.muted);
+  doc.text(
+    `Saldo pendiente del proveedor al momento de emisión: ${formatMoney(supplier.balance)}`,
+    margin,
+    y,
+  );
+
+  applyFooters(doc, companyName);
+  const slug = supplier.name.toLowerCase().replace(/\s+/g, "-").slice(0, 24);
+  doc.save(`pago-proveedor-${slug}-${payment.id.slice(-6)}.pdf`);
+}
+
+/**
+ * Ticket/comprobante estrecho (80 mm) para imprimir al registrar un pago.
+ * Abre el diálogo de impresión del navegador.
+ */
+export async function printSupplierPaymentTicket(opts: {
+  payment: SupplierPayment;
+  supplier: Supplier;
+  companyName?: string;
+  slogan?: string;
+  address?: string;
+  phone?: string;
+  /** Si true, también descarga el archivo */
+  alsoDownload?: boolean;
+}) {
+  const {
+    payment,
+    supplier,
+    companyName = "MI BARRIO",
+    slogan,
+    address,
+    phone,
+    alsoDownload = true,
+  } = opts;
+
+  const { jsPDF } = await import("jspdf");
+  // Ancho tipo ticket térmico ~80 mm; alto variable
+  const W = 80;
+  const margin = 4;
+  const right = W - margin;
+  let y = 6;
+
+  const doc = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: [W, 140],
+  });
+
+  const center = (text: string, size: number, style: "normal" | "bold" = "normal") => {
+    doc.setFont("helvetica", style);
+    doc.setFontSize(size);
+    doc.text(text, W / 2, y, { align: "center" });
+  };
+
+  const line = () => {
+    doc.setDrawColor(180);
+    doc.setLineDashPattern([0.8, 0.8], 0);
+    doc.line(margin, y, right, y);
+    doc.setLineDashPattern([], 0);
+    y += 4;
+  };
+
+  const row = (label: string, value: string) => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(80);
+    doc.text(label, margin, y);
+    doc.setTextColor(20);
+    doc.setFont("helvetica", "bold");
+    const lines = doc.splitTextToSize(value, right - margin - 22);
+    doc.text(lines, right, y, { align: "right" });
+    y += Math.max(4.2, lines.length * 3.6);
+  };
+
+  // Encabezado
+  doc.setTextColor(11, 37, 69);
+  center(companyName, 11, "bold");
+  y += 4;
+  if (slogan?.trim()) {
+    doc.setTextColor(100);
+    center(slogan.trim(), 7, "normal");
+    y += 3.5;
+  }
+  if (address?.trim() || phone?.trim()) {
+    doc.setTextColor(100);
+    const contact = [address?.trim(), phone?.trim() ? `Tel. ${phone.trim()}` : ""]
+      .filter(Boolean)
+      .join(" · ");
+    const contactLines = doc.splitTextToSize(contact, W - margin * 2);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.5);
+    doc.text(contactLines, W / 2, y, { align: "center" });
+    y += contactLines.length * 3 + 1;
+  }
+
+  line();
+  doc.setTextColor(11, 37, 69);
+  center("COMPROBANTE DE PAGO", 9, "bold");
+  y += 3.5;
+  doc.setTextColor(100);
+  center("Proveedores", 7, "normal");
+  y += 4;
+  line();
+
+  row("Folio", payment.id.slice(-8).toUpperCase());
+  row("Fecha", formatDate(payment.paidAt));
+  row("Proveedor", supplier.name);
+  if (supplier.phone) row("Teléfono", supplier.phone);
+  row("Método", PAYMENT_METHOD_LABEL[payment.method] ?? payment.method);
+  row("Registró", payment.userName);
+  if (payment.note) row("Nota", payment.note);
+
+  y += 1;
+  line();
+
+  doc.setTextColor(11, 37, 69);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text("TOTAL PAGADO", margin, y);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text(formatMoney(payment.amount), right, y, { align: "right" });
+  y += 6;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(100);
+  doc.text("Saldo pendiente", margin, y);
+  doc.setTextColor(20);
+  doc.setFont("helvetica", "bold");
+  doc.text(formatMoney(supplier.balance), right, y, { align: "right" });
+  y += 5;
+
+  line();
+  doc.setTextColor(100);
+  center("Gracias por su registro", 7, "normal");
+  y += 3.5;
+  center(new Date().toLocaleString("es-GT"), 6, "normal");
+  y += 5;
+  center("— ticket de pago —", 6, "normal");
+
+  // Ajusta alto real del ticket recortando página (jspdf no recorta fácil;
+  // el formato fijo alcanza para el contenido).
+  if (alsoDownload) {
+    const slug = supplier.name.toLowerCase().replace(/\s+/g, "-").slice(0, 20);
+    doc.save(`ticket-pago-${slug}-${payment.id.slice(-6)}.pdf`);
+  }
+
+  try {
+    doc.autoPrint();
+    const url = doc.output("bloburl");
+    const win = window.open(url, "_blank");
+    if (!win) {
+      // Si el navegador bloquea popups, al menos quedó descargado
+      return;
+    }
+  } catch {
+    // fallback: solo descarga
+  }
+}
+
+/** Ticket térmico 50 mm para una venta del POS. */
+export async function printSaleTicket(opts: {
+  sale: Sale;
+  branchName?: string;
+  companyName?: string;
+  slogan?: string;
+  address?: string;
+  phone?: string;
+  alsoDownload?: boolean;
+}) {
+  const {
+    sale,
+    branchName,
+    companyName = "MI BARRIO",
+    slogan,
+    address,
+    phone,
+    alsoDownload = true,
+  } = opts;
+
+  const { jsPDF } = await import("jspdf");
+  // Ancho ticket térmico 50 mm
+  const W = 50;
+  const margin = 2.2;
+  const right = W - margin;
+  const colCant = margin;
+  const colName = margin + 7;
+  const colPrice = right;
+  const nameWidth = right - colName - 13;
+
+  const estimatedH = Math.max(
+    110,
+    48 + sale.items.length * 11 + 36,
+  );
+
+  const doc = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: [W, estimatedH],
+  });
+
+  let y = 4;
+
+  const center = (
+    text: string,
+    size: number,
+    style: "normal" | "bold" = "normal",
+  ) => {
+    doc.setFont("helvetica", style);
+    doc.setFontSize(size);
+    doc.text(text, W / 2, y, { align: "center" });
+  };
+
+  const solidRule = () => {
+    doc.setDrawColor(40);
+    doc.setLineWidth(0.25);
+    doc.line(margin, y, right, y);
+    y += 3;
+  };
+
+  doc.setTextColor(20);
+  center(companyName, 9, "bold");
+  y += 3.2;
+  if (slogan?.trim()) {
+    doc.setTextColor(70);
+    center(slogan.trim(), 5.5, "normal");
+    y += 2.8;
+  }
+  if (address?.trim() || phone?.trim()) {
+    doc.setTextColor(70);
+    const contact = [address?.trim(), phone?.trim() ? `Tel. ${phone.trim()}` : ""]
+      .filter(Boolean)
+      .join(" · ");
+    const contactLines = doc.splitTextToSize(contact, W - margin * 2);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(5);
+    doc.text(contactLines, W / 2, y, { align: "center" });
+    y += contactLines.length * 2.4 + 0.8;
+  }
+
+  y += 0.5;
+  solidRule();
+  doc.setTextColor(20);
+  center("TICKET DE VENTA", 7.5, "bold");
+  y += 2.8;
+  if (branchName) {
+    doc.setTextColor(70);
+    center(branchName, 5.5, "normal");
+    y += 2.8;
+  }
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(5.5);
+  doc.setTextColor(70);
+  doc.text(`Folio: ${sale.id.slice(-8).toUpperCase()}`, margin, y);
+  y += 2.6;
+  doc.text(`Fecha: ${formatDate(sale.createdAt)}`, margin, y);
+  y += 2.6;
+  doc.text(`Cajero: ${sale.userName}`, margin, y);
+  y += 3;
+
+  solidRule();
+
+  // Encabezado de columnas
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(5.5);
+  doc.setTextColor(40);
+  doc.text("Cant", colCant, y);
+  doc.text("Producto", colName, y);
+  doc.text("Precio", colPrice, y, { align: "right" });
+  y += 2.2;
+  doc.setDrawColor(40);
+  doc.setLineWidth(0.2);
+  doc.line(margin, y, right, y);
+  y += 3;
+
+  for (const item of sale.items) {
+    const unitPrice = formatMoney(item.price);
+    const lineTotal = formatMoney(item.price * item.quantity);
+
+    doc.setTextColor(20);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.text(String(item.quantity), colCant + 2.5, y, { align: "center" });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6);
+    const nameLines = doc.splitTextToSize(item.name, nameWidth);
+    doc.text(nameLines, colName, y);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6);
+    doc.text(unitPrice, colPrice, y, { align: "right" });
+
+    const nameH = Math.max(2.8, nameLines.length * 2.6);
+    y += nameH;
+
+    // Importe de la línea (cant × precio)
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(5);
+    doc.setTextColor(70);
+    doc.text(`Importe: ${lineTotal}`, colName, y);
+    y += 3.4;
+  }
+
+  solidRule();
+
+  doc.setTextColor(20);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.text("TOTAL", margin, y);
+  doc.setFontSize(10);
+  doc.text(formatMoney(sale.total), right, y, { align: "right" });
+  y += 5;
+
+  doc.setTextColor(70);
+  center("¡Gracias por su compra!", 5.5, "normal");
+  y += 2.6;
+  center(new Date().toLocaleString("es-GT"), 4.5, "normal");
+
+  if (alsoDownload) {
+    doc.save(`ticket-venta-${sale.id.slice(-6)}.pdf`);
+  }
+
+  try {
+    doc.autoPrint();
+    const url = doc.output("bloburl");
+    window.open(url, "_blank");
+  } catch {
+    // fallback: solo descarga
+  }
+}
+
+/** Historial completo de pagos a proveedores. */
+export async function downloadSupplierPaymentsHistoryPdf(opts: {
+  payments: SupplierPayment[];
+  suppliers: Supplier[];
+  /** Si se indica, filtra solo ese proveedor */
+  supplierId?: string;
+} & CompanyPdfMeta) {
+  const {
+    payments,
+    suppliers,
+    supplierId,
+    companyName = "MI BARRIO",
+    slogan,
+    address,
+    phone,
+    logoDataUrl,
+    pdfStyle,
+  } = opts;
+  const byId = new Map(suppliers.map((s) => [s.id, s]));
+  const list = [...payments]
+    .filter((p) => (supplierId ? p.supplierId === supplierId : true))
+    .sort(
+      (a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime(),
+    );
+  const total = list.reduce((n, p) => n + p.amount, 0);
+  const focus = supplierId ? byId.get(supplierId) : null;
+
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const { margin, contentRight } = PAGE;
+
+  const header = await drawDocumentHeader(doc, {
+    companyName,
+    slogan,
+    address,
+    phone,
+    logoDataUrl,
+    pdfStyle,
+    documentTitle: focus
+      ? `Historial de pagos · ${focus.name}`
+      : "Historial de pagos a proveedores",
+    sourceLines: [
+      focus ? `Proveedor: ${focus.name}` : "Alcance: todos los proveedores",
+      `Fecha de emisión: ${new Date().toLocaleString("es-GT")}`,
+      `Pagos listados: ${list.length} · Total: ${formatMoney(total)}`,
+      `Fuente: módulo Proveedores · historial de pagos`,
+    ],
+  });
+  let y = header.y;
+  const accent = header.accent;
+
+  function drawHead(atY: number) {
+    doc.setFillColor(...accent);
+    doc.roundedRect(margin, atY - 4.5, contentRight - margin, 7, 1, 1, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text("Fecha", margin + 2, atY);
+    doc.text("Proveedor", margin + 38, atY);
+    doc.text("Método", 128, atY);
+    doc.text("Monto", contentRight - 2, atY, { align: "right" });
+    doc.setTextColor(...COLORS.ink);
+    return atY + 6;
+  }
+
+  y = drawHead(y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+
+  if (list.length === 0) {
+    doc.setTextColor(...COLORS.muted);
+    doc.text("No hay pagos registrados.", margin, y + 4);
+  }
+
+  let row = 0;
+  for (const p of list) {
+    if (y > 270) {
+      doc.addPage();
+      y = 16;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(...accent);
+      doc.text(`${companyName} · Historial de pagos`, margin, y);
+      y += 6;
+      y = drawHead(y);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+    }
+    const supplierName = byId.get(p.supplierId)?.name ?? "Proveedor";
+    const name =
+      supplierName.length > 28
+        ? `${supplierName.slice(0, 25)}...`
+        : supplierName;
+    if (row % 2 === 0) {
+      doc.setFillColor(...COLORS.softBg);
+      doc.rect(margin, y - 4, contentRight - margin, 7, "F");
+    }
+    doc.setTextColor(...COLORS.ink);
+    doc.text(formatDate(p.paidAt), margin + 2, y);
+    doc.text(name, margin + 38, y);
+    doc.text(PAYMENT_METHOD_LABEL[p.method] ?? p.method, 128, y);
+    doc.setFont("helvetica", "bold");
+    doc.text(formatMoney(p.amount), contentRight - 2, y, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    y += 7;
+    row += 1;
+  }
+
+  y += 4;
+  doc.setDrawColor(...COLORS.line);
+  doc.line(margin, y, contentRight, y);
+  y += 7;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(...accent);
+  doc.text(`Total pagado: ${formatMoney(total)}`, margin, y);
+
+  applyFooters(doc, companyName);
+  const file = focus
+    ? `historial-pagos-${focus.name.toLowerCase().replace(/\s+/g, "-").slice(0, 24)}.pdf`
+    : "historial-pagos-proveedores.pdf";
+  doc.save(file);
 }

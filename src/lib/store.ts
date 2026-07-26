@@ -14,7 +14,7 @@ import type {
   User,
 } from "./types";
 
-export const STORAGE_KEY = "tienda-barrio-data-v9";
+export const STORAGE_KEY = "tienda-barrio-data-v10";
 export const SESSION_KEY = "tienda-barrio-session-v2";
 /** Cierre automático por inactividad (30 minutos). */
 export const SESSION_IDLE_MS = 30 * 60 * 1000;
@@ -102,6 +102,7 @@ export const DEFAULT_USERS: User[] = [
     password: "admin123",
     role: "administrador",
     branchId: "suc-1",
+    allowedBranchIds: [],
     permissions: defaultPermissionsForRole("administrador"),
   },
   {
@@ -111,6 +112,7 @@ export const DEFAULT_USERS: User[] = [
     password: "vendedor123",
     role: "vendedor",
     branchId: "suc-1",
+    allowedBranchIds: ["suc-1"],
     permissions: defaultPermissionsForRole("vendedor"),
   },
   {
@@ -120,6 +122,7 @@ export const DEFAULT_USERS: User[] = [
     password: "maria123",
     role: "vendedor",
     branchId: "suc-2",
+    allowedBranchIds: ["suc-2"],
     permissions: defaultPermissionsForRole("vendedor"),
   },
 ];
@@ -631,6 +634,8 @@ export function createInitialData(): StoreData {
     products,
     sales: createMockSales(storeProducts),
     transfers: [],
+    suppliers: [],
+    supplierPayments: [],
     settings: { ...DEFAULT_SETTINGS },
   });
 }
@@ -666,6 +671,8 @@ export function normalizeStoreData(raw: Partial<StoreData> & {
     products: raw.products ?? [],
     sales: raw.sales ?? [],
     transfers: raw.transfers ?? [],
+    suppliers: raw.suppliers ?? [],
+    supplierPayments: raw.supplierPayments ?? [],
     settings: {
       companyName: raw.settings?.companyName?.trim() || DEFAULT_SETTINGS.companyName,
       slogan:

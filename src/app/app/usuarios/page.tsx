@@ -18,6 +18,127 @@ import {
 } from "@/lib/permissions";
 import type { Permission, Role, User } from "@/lib/types";
 
+function BranchAccessPicker({
+  stores,
+  primaryId,
+  value,
+  onChangePrimary,
+  onChangeAllowed,
+  adminMode,
+}: {
+  stores: { id: string; name: string }[];
+  primaryId: string;
+  value: string[];
+  onChangePrimary: (id: string) => void;
+  onChangeAllowed: (ids: string[]) => void;
+  adminMode?: boolean;
+}) {
+  const selected = new Set(value);
+
+  function toggle(id: string) {
+    if (adminMode) {
+      // Admin: vacío = todas. Toggle agrega/quita restricciones.
+      const next = selected.has(id)
+        ? value.filter((x) => x !== id)
+        : [...value, id];
+      onChangeAllowed(next);
+      if (next.length && !next.includes(primaryId)) {
+        onChangePrimary(next[0]);
+      }
+      return;
+    }
+    // Vendedor: al menos una; la principal siempre queda incluida
+    let next = selected.has(id)
+      ? value.filter((x) => x !== id)
+      : [...value, id];
+    if (next.length === 0) next = [primaryId || id];
+    if (!next.includes(primaryId) && primaryId) {
+      // Si quitan la principal, cambia la principal a la primera restante
+      if (id === primaryId) {
+        onChangePrimary(next[0]);
+      } else {
+        next = [...next, primaryId];
+      }
+    }
+    onChangeAllowed(Array.from(new Set(next)));
+  }
+
+  function setPrimary(id: string) {
+    onChangePrimary(id);
+    if (!adminMode && !selected.has(id)) {
+      onChangeAllowed([...value, id]);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+          Tiendas que puede ver
+        </p>
+        {adminMode ? (
+          <span className="text-[10px] text-[var(--muted)]">
+            Vacío = todas
+          </span>
+        ) : null}
+      </div>
+      <Field label="Sucursal principal">
+        <select
+          className={`${inputClass} min-h-11`}
+          value={primaryId}
+          onChange={(e) => setPrimary(e.target.value)}
+        >
+          {stores.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {stores.map((b) => {
+          const on = adminMode
+            ? value.length === 0 || selected.has(b.id)
+            : selected.has(b.id);
+          const isPrimary = b.id === primaryId;
+          return (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => toggle(b.id)}
+              className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition ${
+                on
+                  ? "border-[var(--brand)]/40 bg-[var(--brand-soft)]"
+                  : "border-[var(--line)] bg-white hover:border-[var(--brand)]/30"
+              }`}
+            >
+              <span
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${
+                  on
+                    ? "bg-[var(--brand)] text-white"
+                    : "border border-[var(--line)] bg-white text-transparent"
+                }`}
+              >
+                <Check size={12} strokeWidth={3} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">
+                  {b.name}
+                </span>
+                {isPrimary ? (
+                  <span className="text-[10px] font-medium text-[var(--brand)]">
+                    Principal
+                  </span>
+                ) : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PermissionPicker({
   role,
   value,
@@ -113,6 +234,7 @@ export default function UsuariosPage() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("vendedor");
   const [branchId, setBranchId] = useState("");
+  const [allowedBranchIds, setAllowedBranchIds] = useState<string[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>(
     defaultPermissionsForRole("vendedor"),
   );
@@ -122,18 +244,27 @@ export default function UsuariosPage() {
   const [editName, setEditName] = useState("");
   const [editRole, setEditRole] = useState<Role>("vendedor");
   const [editBranchId, setEditBranchId] = useState("");
+  const [editAllowedBranchIds, setEditAllowedBranchIds] = useState<string[]>(
+    [],
+  );
   const [editPassword, setEditPassword] = useState("");
   const [editPermissions, setEditPermissions] = useState<Permission[]>([]);
 
   useEffect(() => {
     if (!branchId && storeBranches[0]) {
       setBranchId(storeBranches[0].id);
+      setAllowedBranchIds([storeBranches[0].id]);
     }
   }, [branchId, storeBranches]);
 
   function onRoleChange(next: Role) {
     setRole(next);
     setPermissions(defaultPermissionsForRole(next));
+    if (next === "administrador") {
+      setAllowedBranchIds([]);
+    } else if (allowedBranchIds.length === 0 && branchId) {
+      setAllowedBranchIds([branchId]);
+    }
   }
 
   function onSubmit(e: FormEvent) {
@@ -144,6 +275,8 @@ export default function UsuariosPage() {
       password,
       role,
       branchId,
+      allowedBranchIds:
+        role === "administrador" ? allowedBranchIds : allowedBranchIds,
       permissions,
     });
     if (err) {
@@ -160,6 +293,10 @@ export default function UsuariosPage() {
     setPassword("");
     setRole("vendedor");
     setPermissions(defaultPermissionsForRole("vendedor"));
+    if (storeBranches[0]) {
+      setBranchId(storeBranches[0].id);
+      setAllowedBranchIds([storeBranches[0].id]);
+    }
   }
 
   function openEdit(user: User) {
@@ -167,6 +304,13 @@ export default function UsuariosPage() {
     setEditName(user.name);
     setEditRole(user.role);
     setEditBranchId(user.branchId);
+    setEditAllowedBranchIds(
+      user.allowedBranchIds?.length
+        ? [...user.allowedBranchIds]
+        : user.role === "administrador"
+          ? []
+          : [user.branchId],
+    );
     setEditPassword("");
     setEditPermissions(
       user.permissions?.length
@@ -178,6 +322,11 @@ export default function UsuariosPage() {
   function onEditRoleChange(next: Role) {
     setEditRole(next);
     setEditPermissions(defaultPermissionsForRole(next));
+    if (next === "administrador") {
+      setEditAllowedBranchIds([]);
+    } else if (editAllowedBranchIds.length === 0 && editBranchId) {
+      setEditAllowedBranchIds([editBranchId]);
+    }
   }
 
   function saveEdit(e: FormEvent) {
@@ -187,6 +336,7 @@ export default function UsuariosPage() {
       name: editName,
       role: editRole,
       branchId: editBranchId,
+      allowedBranchIds: editAllowedBranchIds,
       password: editPassword || undefined,
       permissions: editPermissions,
     });
@@ -221,6 +371,18 @@ export default function UsuariosPage() {
     if (list.length === 0) return "Sin permisos";
     return list
       .map((id) => PERMISSION_CATALOG.find((p) => p.id === id)?.label ?? id)
+      .join(", ");
+  }
+
+  function storeLabels(user: User) {
+    if (user.role === "administrador" && !user.allowedBranchIds?.length) {
+      return "Todas";
+    }
+    const ids = user.allowedBranchIds?.length
+      ? user.allowedBranchIds
+      : [user.branchId];
+    return ids
+      .map((id) => data.branches.find((b) => b.id === id)?.name ?? id)
       .join(", ");
   }
 
@@ -287,20 +449,16 @@ export default function UsuariosPage() {
                     ) : null}
                   </select>
                 </Field>
-                <Field label="Sucursal">
-                  <select
-                    className={`${inputClass} min-h-11 text-base sm:text-sm`}
-                    value={branchId}
-                    onChange={(e) => setBranchId(e.target.value)}
-                  >
-                    {storeBranches.map((branch) => (
-                      <option key={branch.id} value={branch.id}>
-                        {branch.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
               </div>
+
+              <BranchAccessPicker
+                stores={storeBranches}
+                primaryId={branchId}
+                value={allowedBranchIds}
+                onChangePrimary={setBranchId}
+                onChangeAllowed={setAllowedBranchIds}
+                adminMode={role === "administrador"}
+              />
 
               <PermissionPicker
                 role={role}
@@ -334,9 +492,6 @@ export default function UsuariosPage() {
 
             <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto md:hidden">
               {data.users.map((user) => {
-                const branch = data.branches.find(
-                  (b) => b.id === user.branchId,
-                );
                 return (
                   <div
                     key={user.id}
@@ -364,7 +519,7 @@ export default function UsuariosPage() {
                     </p>
                     <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-3">
                       <p className="truncate text-xs text-[var(--muted)]">
-                        {branch?.name ?? "Sin sucursal"}
+                        {storeLabels(user)}
                       </p>
                       <div className="flex items-center gap-1">
                         <button
@@ -405,15 +560,12 @@ export default function UsuariosPage() {
                     <th className="pb-2 font-medium">Usuario</th>
                     <th className="pb-2 font-medium">Rol</th>
                     <th className="pb-2 font-medium">Permisos</th>
-                    <th className="pb-2 font-medium">Sucursal</th>
+                    <th className="pb-2 font-medium">Tiendas</th>
                     <th className="pb-2 font-medium" />
                   </tr>
                 </thead>
                 <tbody>
                   {data.users.map((user) => {
-                    const branch = data.branches.find(
-                      (b) => b.id === user.branchId,
-                    );
                     return (
                       <tr
                         key={user.id}
@@ -427,8 +579,10 @@ export default function UsuariosPage() {
                             {permissionLabels(user)}
                           </span>
                         </td>
-                        <td className="py-3">
-                          {branch?.name ?? "Sin sucursal"}
+                        <td className="max-w-[12rem] py-3 text-xs text-[var(--muted)]">
+                          <span className="line-clamp-2">
+                            {storeLabels(user)}
+                          </span>
                         </td>
                         <td className="py-3 text-right">
                           <button
@@ -512,22 +666,17 @@ export default function UsuariosPage() {
                       ) : null}
                     </select>
                   </Field>
-                  <Field label="Sucursal">
-                    <select
-                      className={inputClass}
-                      value={editBranchId}
-                      onChange={(e) => setEditBranchId(e.target.value)}
-                    >
-                      {data.branches
-                        .filter((b) => !b.isWarehouse)
-                        .map((branch) => (
-                          <option key={branch.id} value={branch.id}>
-                            {branch.name}
-                          </option>
-                        ))}
-                    </select>
-                  </Field>
                 </div>
+
+                <BranchAccessPicker
+                  stores={storeBranches}
+                  primaryId={editBranchId}
+                  value={editAllowedBranchIds}
+                  onChangePrimary={setEditBranchId}
+                  onChangeAllowed={setEditAllowedBranchIds}
+                  adminMode={editRole === "administrador"}
+                />
+
                 <Field label="Nueva contraseña (opcional)">
                   <input
                     type="password"

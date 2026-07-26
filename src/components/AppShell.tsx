@@ -132,8 +132,16 @@ export function AppShell({
   subtitle?: string;
 }) {
   const router = useRouter();
-  const { ready, session, logout, currentBranchName, syncError, data } =
-    useAuth();
+  const {
+    ready,
+    session,
+    logout,
+    currentBranchName,
+    syncError,
+    data,
+    visibleBranches,
+    setActiveBranch,
+  } = useAuth();
   const companyName = data.settings?.companyName ?? "MI BARRIO";
   const canConfig = hasPermission(session, "configuracion");
   const [navCollapsed, setNavCollapsed] = useState(false);
@@ -193,9 +201,24 @@ export function AppShell({
               </h1>
               <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-[var(--muted)]">
                 <MapPin size={11} className="shrink-0" />
-                <span className="truncate">
-                  {subtitle ?? currentBranchName}
-                </span>
+                {visibleBranches.length > 1 ? (
+                  <select
+                    className="max-w-full truncate bg-transparent font-medium text-[var(--ink)] outline-none"
+                    value={session.branchId}
+                    onChange={(e) => setActiveBranch(e.target.value)}
+                    aria-label="Cambiar tienda"
+                  >
+                    {visibleBranches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="truncate">
+                    {subtitle ?? currentBranchName}
+                  </span>
+                )}
               </div>
             </div>
             <ProfileMenu
@@ -219,13 +242,37 @@ export function AppShell({
                 <p className="mt-0.5 text-xs text-[var(--muted)]">{subtitle}</p>
               ) : null}
             </div>
-            <ProfileMenu
-              name={session.name}
-              role={session.role}
-              canConfig={canConfig}
-              onConfig={goConfig}
-              onLogout={doLogout}
-            />
+            <div className="flex items-center gap-2">
+              {visibleBranches.length > 1 ? (
+                <label className="flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--bg-soft)] px-2.5 py-1.5 text-xs text-[var(--muted)]">
+                  <MapPin size={13} className="shrink-0" />
+                  <select
+                    className="max-w-[11rem] bg-transparent text-sm font-semibold text-[var(--ink)] outline-none"
+                    value={session.branchId}
+                    onChange={(e) => setActiveBranch(e.target.value)}
+                    aria-label="Cambiar tienda"
+                  >
+                    {visibleBranches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <span className="hidden items-center gap-1 text-xs text-[var(--muted)] lg:inline-flex">
+                  <MapPin size={12} />
+                  {currentBranchName}
+                </span>
+              )}
+              <ProfileMenu
+                name={session.name}
+                role={session.role}
+                canConfig={canConfig}
+                onConfig={goConfig}
+                onLogout={doLogout}
+              />
+            </div>
           </div>
         </header>
 
@@ -235,7 +282,9 @@ export function AppShell({
               {syncError}
             </div>
           ) : null}
-          <div className="w-full min-w-0 max-w-full">{children}</div>
+          <div className="flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col">
+            {children}
+          </div>
         </main>
         <BottomNav />
       </div>

@@ -13,7 +13,10 @@ import { SESSION_KEY, createInitialData, uid, getCostPrice, normalizePdfStyle } 
 import {
   canManageUsers,
   hasPermission,
+  normalizeAllowedBranchIds,
   normalizePermissions,
+  normalizeUser,
+  userCanAccessBranch,
 } from "@/lib/permissions";
 import {
   fetchStore,
@@ -29,6 +32,9 @@ import type {
   SaleItem,
   Session,
   StoreData,
+  Supplier,
+  SupplierPayment,
+  SupplierPaymentMethod,
   Transfer,
   TransferItem,
   User,
@@ -69,6 +75,7 @@ type AuthContextValue = {
     password: string;
     role: Role;
     branchId: string;
+    allowedBranchIds?: string[];
     permissions?: Permission[];
   }) => string | null;
   updateUser: (
@@ -77,12 +84,16 @@ type AuthContextValue = {
       name?: string;
       role?: Role;
       branchId?: string;
+      allowedBranchIds?: string[];
       password?: string;
       permissions?: Permission[];
     },
   ) => string | null;
   deleteUser: (id: string) => string | null;
-  checkout: (items: SaleItem[]) => string | null;
+  checkout: (items: SaleItem[]) => {
+    error: string | null;
+    sale?: Sale;
+  };
   transferStock: (input: {
     fromBranchId: string;
     toBranchId: string;
@@ -106,21 +117,68 @@ type AuthContextValue = {
       barcode?: string;
     }[],
   ) => { error: string | null; created: number; updated: number };
+  createSupplier: (input: {
+    name: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    notes?: string;
+    balance?: number;
+  }) => string | null;
+  updateSupplier: (
+    id: string,
+    input: {
+      name?: string;
+      phone?: string;
+      email?: string;
+      address?: string;
+      notes?: string;
+      balance?: number;
+    },
+  ) => string | null;
+  deleteSupplier: (id: string) => string | null;
+  addSupplierPayment: (input: {
+    supplierId: string;
+    amount: number;
+    method: SupplierPaymentMethod;
+    note?: string;
+    paidAt?: string;
+  }) => {
+    error: string | null;
+    payment?: SupplierPayment;
+    supplier?: Supplier;
+  };
+  deleteSupplierPayment: (id: string) => string | null;
   branchProducts: Product[];
   branchSales: Sale[];
   currentBranchName: string;
   storeBranches: StoreData["branches"];
+  /** Tiendas que el usuario actual puede ver/operar */
+  visibleBranches: StoreData["branches"];
 };
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function sessionFromUser(user: User, branchId?: string): Session {
+  const normalized = normalizeUser(user);
+  let active = branchId ?? normalized.branchId;
+  if (normalized.role === "administrador") {
+    if (
+      normalized.allowedBranchIds.length > 0 &&
+      !normalized.allowedBranchIds.includes(active)
+    ) {
+      active = normalized.allowedBranchIds[0] ?? normalized.branchId;
+    }
+  } else if (!normalized.allowedBranchIds.includes(active)) {
+    active = normalized.allowedBranchIds[0] ?? normalized.branchId;
+  }
   return {
-    userId: user.id,
-    name: user.name,
-    username: user.username,
-    role: user.role,
-    branchId: branchId ?? user.branchId,
-    permissions: normalizePermissions(user.role, user.permissions),
+    userId: normalized.id,
+    name: normalized.name,
+    username: normalized.username,
+    role: normalized.role,
+    branchId: active,
+    allowedBranchIds: normalized.allowedBranchIds,
+    permissions: normalized.permissions,
   };
 }
 
@@ -133,6 +191,11 @@ function loadSession(): Session | null {
     return {
       ...parsed,
       permissions: normalizePermissions(parsed.role, parsed.permissions),
+      allowedBranchIds: normalizeAllowedBranchIds(
+        parsed.role,
+        parsed.branchId,
+        parsed.allowedBranchIds,
+      ),
     };
   } catch {
     return null;
@@ -228,8 +291,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const server = await fetchStore();
         const current = dataRef.current;
-        const serverSig = `${server.sales.length}:${server.products.length}:${server.users.length}:${server.transfers?.length ?? 0}:${server.settings?.logo ?? ""}:${server.settings?.companyName ?? ""}:${server.sales[0]?.id ?? ""}:${server.products[0]?.updatedAt ?? ""}`;
-        const localSig = `${current.sales.length}:${current.products.length}:${current.users.length}:${current.transfers?.length ?? 0}:${current.settings?.logo ?? ""}:${current.settings?.companyName ?? ""}:${current.sales[0]?.id ?? ""}:${current.products[0]?.updatedAt ?? ""}`;
+        const serverSig = `${server.sales.length}:${server.products.length}:${server.users.length}:${server.transfers?.length ?? 0}:${server.suppliers?.length ?? 0}:${server.supplierPayments?.length ?? 0}:${server.settings?.logo ?? ""}:${server.settings?.companyName ?? ""}:${server.sales[0]?.id ?? ""}:${server.products[0]?.updatedAt ?? ""}`;
+        const localSig = `${current.sales.length}:${current.products.length}:${current.users.length}:${current.transfers?.length ?? 0}:${current.suppliers?.length ?? 0}:${current.supplierPayments?.length ?? 0}:${current.settings?.logo ?? ""}:${current.settings?.companyName ?? ""}:${current.sales[0]?.id ?? ""}:${current.products[0]?.updatedAt ?? ""}`;
         if (serverSig !== localSig) {
           setData(server);
           setSyncError(null);
@@ -286,9 +349,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const setActiveBranch = useCallback(
     (branchId: string) => {
       if (!session) return;
-      if (session.role !== "administrador") return;
-      const exists = data.branches.some((b) => b.id === branchId);
+      const exists = data.branches.some((b) => b.id === branchId && !b.isWarehouse);
       if (!exists) return;
+      if (!userCanAccessBranch(session, branchId)) return;
       persistSession({ ...session, branchId });
     },
     [data.branches, persistSession, session],
@@ -412,6 +475,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password: string;
       role: Role;
       branchId: string;
+      allowedBranchIds?: string[];
       permissions?: Permission[];
     }) => {
       if (!canManageUsers(session)) {
@@ -425,7 +489,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.users.some((u) => u.username.toLowerCase() === username)) {
         return "Ese usuario ya existe.";
       }
-      if (!data.branches.some((b) => b.id === input.branchId)) {
+      if (!data.branches.some((b) => b.id === input.branchId && !b.isWarehouse)) {
         return "Sucursal no válida.";
       }
       if (
@@ -434,19 +498,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ) {
         return "Solo un administrador puede crear otros administradores.";
       }
+      const storeIds = new Set(
+        data.branches.filter((b) => !b.isWarehouse).map((b) => b.id),
+      );
+      const allowedRaw = (input.allowedBranchIds ?? [input.branchId]).filter(
+        (id) => storeIds.has(id),
+      );
+      if (input.role !== "administrador" && allowedRaw.length === 0) {
+        return "Selecciona al menos una tienda visible.";
+      }
+      if (
+        input.role !== "administrador" &&
+        !allowedRaw.includes(input.branchId)
+      ) {
+        return "La sucursal principal debe estar entre las tiendas visibles.";
+      }
       const permissions = normalizePermissions(
         input.role,
         input.permissions,
       );
-      const user: User = {
+      const user = normalizeUser({
         id: uid("usr"),
         name,
         username,
         password: input.password,
         role: input.role,
         branchId: input.branchId,
+        allowedBranchIds: allowedRaw,
         permissions,
-      };
+      });
       persist({ ...data, users: [...data.users, user] });
       return null;
     },
@@ -459,6 +539,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         name?: string;
         role?: Role;
         branchId?: string;
+        allowedBranchIds?: string[];
         password?: string;
         permissions?: Permission[];
       },
@@ -483,14 +564,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ) {
         return "Solo un administrador puede asignar ese rol.";
       }
-      if (input.branchId && !data.branches.some((b) => b.id === input.branchId)) {
+      const nextBranchId = input.branchId ?? current.branchId;
+      if (!data.branches.some((b) => b.id === nextBranchId && !b.isWarehouse)) {
         return "Sucursal no válida.";
       }
-      const next: User = {
+      const storeIds = new Set(
+        data.branches.filter((b) => !b.isWarehouse).map((b) => b.id),
+      );
+      const allowedRaw = (
+        input.allowedBranchIds ??
+        current.allowedBranchIds ??
+        [nextBranchId]
+      ).filter((bid) => storeIds.has(bid));
+      if (nextRole !== "administrador" && allowedRaw.length === 0) {
+        return "Selecciona al menos una tienda visible.";
+      }
+      if (
+        nextRole !== "administrador" &&
+        !allowedRaw.includes(nextBranchId)
+      ) {
+        return "La sucursal principal debe estar entre las tiendas visibles.";
+      }
+      const next = normalizeUser({
         ...current,
         name: input.name?.trim() || current.name,
         role: nextRole,
-        branchId: input.branchId ?? current.branchId,
+        branchId: nextBranchId,
+        allowedBranchIds: allowedRaw,
         password:
           input.password && input.password.trim()
             ? input.password
@@ -499,7 +599,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           nextRole,
           input.permissions ?? current.permissions,
         ),
-      };
+      });
       const users = [...data.users];
       users[idx] = next;
       persist({ ...data, users });
@@ -541,21 +641,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const checkout = useCallback(
     (items: SaleItem[]) => {
-      if (!session) return "Sesión no válida.";
-      if (!items.length) return "Agrega productos al carrito.";
+      if (!session) return { error: "Sesión no válida." };
+      if (!items.length) return { error: "Agrega productos al carrito." };
       const branch = data.branches.find((b) => b.id === session.branchId);
       if (branch?.isWarehouse) {
-        return "No se puede vender desde la Bodega Central. Cambia a una sucursal.";
+        return {
+          error:
+            "No se puede vender desde la Bodega Central. Cambia a una sucursal.",
+        };
       }
       const products = [...data.products];
       for (const item of items) {
         const idx = products.findIndex((p) => p.id === item.productId);
-        if (idx < 0) return `Producto no encontrado: ${item.name}`;
+        if (idx < 0) return { error: `Producto no encontrado: ${item.name}` };
         if (products[idx].branchId !== session.branchId) {
-          return "Hay productos de otra sucursal.";
+          return { error: "Hay productos de otra sucursal." };
         }
         if (products[idx].quantity < item.quantity) {
-          return `Stock insuficiente de ${item.name}.`;
+          return { error: `Stock insuficiente de ${item.name}.` };
         }
         products[idx] = {
           ...products[idx],
@@ -581,7 +684,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         products,
         sales: [sale, ...data.sales],
       });
-      return null;
+      return { error: null, sale };
     },
     [data, persist, session],
   );
@@ -857,6 +960,190 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [data, persist, session],
   );
 
+  const createSupplier = useCallback(
+    (input: {
+      name: string;
+      phone?: string;
+      email?: string;
+      address?: string;
+      notes?: string;
+      balance?: number;
+    }) => {
+      if (!session || !hasPermission(session, "proveedores")) {
+        return "No tienes permiso para gestionar proveedores.";
+      }
+      const name = input.name.trim();
+      if (!name) return "El nombre del proveedor es obligatorio.";
+      const now = new Date().toISOString();
+      const supplier: Supplier = {
+        id: uid("sup"),
+        name,
+        phone: input.phone?.trim() || undefined,
+        email: input.email?.trim() || undefined,
+        address: input.address?.trim() || undefined,
+        notes: input.notes?.trim() || undefined,
+        balance: Math.max(0, Number(input.balance) || 0),
+        createdAt: now,
+        updatedAt: now,
+      };
+      persist({
+        ...data,
+        suppliers: [...(data.suppliers ?? []), supplier],
+      });
+      return null;
+    },
+    [data, persist, session],
+  );
+
+  const updateSupplier = useCallback(
+    (
+      id: string,
+      input: {
+        name?: string;
+        phone?: string;
+        email?: string;
+        address?: string;
+        notes?: string;
+        balance?: number;
+      },
+    ) => {
+      if (!session || !hasPermission(session, "proveedores")) {
+        return "No tienes permiso para gestionar proveedores.";
+      }
+      const idx = (data.suppliers ?? []).findIndex((s) => s.id === id);
+      if (idx < 0) return "Proveedor no encontrado.";
+      const current = data.suppliers[idx];
+      const nextName = input.name?.trim() || current.name;
+      if (!nextName) return "El nombre del proveedor es obligatorio.";
+      const next: Supplier = {
+        ...current,
+        name: nextName,
+        phone:
+          input.phone !== undefined
+            ? input.phone.trim() || undefined
+            : current.phone,
+        email:
+          input.email !== undefined
+            ? input.email.trim() || undefined
+            : current.email,
+        address:
+          input.address !== undefined
+            ? input.address.trim() || undefined
+            : current.address,
+        notes:
+          input.notes !== undefined
+            ? input.notes.trim() || undefined
+            : current.notes,
+        balance:
+          input.balance !== undefined
+            ? Math.max(0, Number(input.balance) || 0)
+            : current.balance,
+        updatedAt: new Date().toISOString(),
+      };
+      const suppliers = [...data.suppliers];
+      suppliers[idx] = next;
+      persist({ ...data, suppliers });
+      return null;
+    },
+    [data, persist, session],
+  );
+
+  const deleteSupplier = useCallback(
+    (id: string) => {
+      if (!session || !hasPermission(session, "proveedores")) {
+        return "No tienes permiso para gestionar proveedores.";
+      }
+      persist({
+        ...data,
+        suppliers: (data.suppliers ?? []).filter((s) => s.id !== id),
+        supplierPayments: (data.supplierPayments ?? []).filter(
+          (p) => p.supplierId !== id,
+        ),
+      });
+      return null;
+    },
+    [data, persist, session],
+  );
+
+  const addSupplierPayment = useCallback(
+    (input: {
+      supplierId: string;
+      amount: number;
+      method: SupplierPaymentMethod;
+      note?: string;
+      paidAt?: string;
+    }) => {
+      if (!session || !hasPermission(session, "proveedores")) {
+        return {
+          error: "No tienes permiso para registrar pagos.",
+        };
+      }
+      const amount = Number(input.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return { error: "El monto del pago debe ser mayor a 0." };
+      }
+      const idx = (data.suppliers ?? []).findIndex(
+        (s) => s.id === input.supplierId,
+      );
+      if (idx < 0) return { error: "Proveedor no encontrado." };
+      const supplier = data.suppliers[idx];
+      const now = new Date().toISOString();
+      const payment: SupplierPayment = {
+        id: uid("pay"),
+        supplierId: supplier.id,
+        amount,
+        method: input.method,
+        note: input.note?.trim() || undefined,
+        paidAt: input.paidAt || now,
+        userId: session.userId,
+        userName: session.name,
+        createdAt: now,
+      };
+      const nextSupplier: Supplier = {
+        ...supplier,
+        balance: Math.max(0, supplier.balance - amount),
+        updatedAt: now,
+      };
+      const suppliers = [...data.suppliers];
+      suppliers[idx] = nextSupplier;
+      persist({
+        ...data,
+        suppliers,
+        supplierPayments: [payment, ...(data.supplierPayments ?? [])],
+      });
+      return { error: null, payment, supplier: nextSupplier };
+    },
+    [data, persist, session],
+  );
+
+  const deleteSupplierPayment = useCallback(
+    (id: string) => {
+      if (!session || !hasPermission(session, "proveedores")) {
+        return "No tienes permiso para eliminar pagos.";
+      }
+      const payment = (data.supplierPayments ?? []).find((p) => p.id === id);
+      if (!payment) return "Pago no encontrado.";
+      const suppliers = (data.suppliers ?? []).map((s) =>
+        s.id === payment.supplierId
+          ? {
+              ...s,
+              balance: s.balance + payment.amount,
+              updatedAt: new Date().toISOString(),
+            }
+          : s,
+      );
+      persist({
+        ...data,
+        suppliers,
+        supplierPayments: (data.supplierPayments ?? []).filter(
+          (p) => p.id !== id,
+        ),
+      });
+      return null;
+    },
+    [data, persist, session],
+  );
+
   const branchProducts = useMemo(() => {
     if (!session) return [];
     return data.products.filter((p) => p.branchId === session.branchId);
@@ -875,6 +1162,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => data.branches.filter((b) => !b.isWarehouse),
     [data.branches],
   );
+  const visibleBranches = useMemo(() => {
+    if (!session) return [];
+    if (session.role === "administrador" && !session.allowedBranchIds?.length) {
+      return storeBranches;
+    }
+    const allowed = new Set(
+      session.allowedBranchIds?.length
+        ? session.allowedBranchIds
+        : [session.branchId],
+    );
+    return storeBranches.filter((b) => allowed.has(b.id));
+  }, [session, storeBranches]);
   const value = useMemo<AuthContextValue>(
     () => ({
       ready,
@@ -894,10 +1193,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       transferStock,
       updateSettings,
       importProducts,
+      createSupplier,
+      updateSupplier,
+      deleteSupplier,
+      addSupplierPayment,
+      deleteSupplierPayment,
       branchProducts,
       branchSales,
       currentBranchName,
       storeBranches,
+      visibleBranches,
     }),
     [
       ready,
@@ -917,10 +1222,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       transferStock,
       updateSettings,
       importProducts,
+      createSupplier,
+      updateSupplier,
+      deleteSupplier,
+      addSupplierPayment,
+      deleteSupplierPayment,
       branchProducts,
       branchSales,
       currentBranchName,
       storeBranches,
+      visibleBranches,
     ],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

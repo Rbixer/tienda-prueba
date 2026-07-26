@@ -5,6 +5,7 @@ import {
   Settings,
   ShoppingCart,
   Store,
+  Truck,
   Users,
   Warehouse,
   type LucideIcon,
@@ -35,6 +36,13 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Bodega",
     icon: Warehouse,
     permission: "bodega",
+    adminModule: true,
+  },
+  {
+    href: "/app/proveedores",
+    label: "Proveedores",
+    icon: Truck,
+    permission: "proveedores",
     adminModule: true,
   },
   {

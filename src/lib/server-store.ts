@@ -20,6 +20,8 @@ export async function readStore(): Promise<StoreData> {
     if (
       !parsed.transfers ||
       !parsed.settings ||
+      !parsed.suppliers ||
+      !parsed.supplierPayments ||
       !parsed.branches?.some((b) => b.id === "bodega-central")
     ) {
       await writeStore(normalized);

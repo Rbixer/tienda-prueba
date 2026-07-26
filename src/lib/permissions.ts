@@ -44,6 +44,13 @@ export const PERMISSION_CATALOG: PermissionMeta[] = [
     adminModule: true,
   },
   {
+    id: "proveedores",
+    label: "Proveedores",
+    description: "Proveedores y pagos",
+    defaultForSeller: false,
+    adminModule: true,
+  },
+  {
     id: "sucursales",
     label: "Sucursales",
     description: "Administrar sucursales",
@@ -100,9 +107,44 @@ export function canManageUsers(session: Session | null | undefined): boolean {
   return hasPermission(session, "usuarios");
 }
 
+/** Tiendas visibles: admin vacío = todas; vendedor siempre incluye su branchId. */
+export function normalizeAllowedBranchIds(
+  role: Role,
+  branchId: string,
+  allowed?: string[] | null,
+): string[] {
+  if (role === "administrador") {
+    return Array.from(new Set((allowed ?? []).filter(Boolean)));
+  }
+  const list = (allowed?.length ? allowed : [branchId]).filter(Boolean);
+  if (!list.includes(branchId)) list.unshift(branchId);
+  return Array.from(new Set(list));
+}
+
 export function normalizeUser(user: User): User {
+  const permissions = normalizePermissions(user.role, user.permissions);
   return {
     ...user,
-    permissions: normalizePermissions(user.role, user.permissions),
+    permissions,
+    allowedBranchIds: normalizeAllowedBranchIds(
+      user.role,
+      user.branchId,
+      user.allowedBranchIds,
+    ),
   };
+}
+
+export function userCanAccessBranch(
+  session: Session | null | undefined,
+  branchId: string,
+): boolean {
+  if (!session) return false;
+  if (session.role === "administrador") {
+    if (!session.allowedBranchIds?.length) return true;
+    return session.allowedBranchIds.includes(branchId);
+  }
+  const allowed = session.allowedBranchIds?.length
+    ? session.allowedBranchIds
+    : [session.branchId];
+  return allowed.includes(branchId);
 }

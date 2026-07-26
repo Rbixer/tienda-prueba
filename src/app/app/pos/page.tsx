@@ -1,6 +1,14 @@
 "use client";
-import { useCallback, useMemo, useState } from "react";
-import { Minus, Plus, ScanBarcode, ShoppingBag, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Minus,
+  Plus,
+  Printer,
+  ScanBarcode,
+  ShoppingBag,
+  Trash2,
+  X,
+} from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { BarcodeCapture } from "@/components/BarcodeCapture";
 import { ProductThumb } from "@/components/ProductThumb";
@@ -12,16 +20,75 @@ import {
 } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { barcodesMatch, normalizeBarcode } from "@/lib/barcode";
+import { printSaleTicket } from "@/lib/pdf";
 import { formatMoney, formatDate } from "@/lib/store";
 import type { SaleItem } from "@/lib/types";
+
+function CartQtyInput({
+  value,
+  max,
+  onCommit,
+}: {
+  value: number;
+  max: number;
+  onCommit: (qty: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setText(String(value));
+  }, [value, focused]);
+
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      min={1}
+      max={max}
+      className="h-9 w-14 rounded-lg border border-[var(--line)] bg-white text-center text-sm font-semibold outline-none focus:border-[var(--brand)]"
+      value={text}
+      aria-label="Cantidad"
+      onFocus={(e) => {
+        setFocused(true);
+        e.target.select();
+      }}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        setFocused(false);
+        const n = Math.floor(Number(text));
+        if (!Number.isFinite(n) || text.trim() === "") {
+          setText(String(value));
+          return;
+        }
+        onCommit(n);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+    />
+  );
+}
+
 export default function PosPage() {
-  const { branchProducts, branchSales, checkout, currentBranchName } =
-    useAuth();
+  const {
+    branchProducts,
+    branchSales,
+    checkout,
+    currentBranchName,
+    data,
+  } = useAuth();
   const [query, setQuery] = useState("");
   const [barcodeInput, setBarcodeInput] = useState("");
   const [cart, setCart] = useState<SaleItem[]>([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [printTicket, setPrintTicket] = useState(true);
+  const [printing, setPrinting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   const available = useMemo(() => {
     const q = query.trim().toLowerCase();
     return branchProducts
@@ -33,7 +100,10 @@ export default function PosPage() {
           (p.barcode ?? "").toLowerCase().includes(q),
       );
   }, [branchProducts, query]);
+
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const cartUnits = cart.reduce((n, item) => n + item.quantity, 0);
+
   const addToCart = useCallback(
     (productId: string) => {
       const product = branchProducts.find((p) => p.id === productId);
@@ -70,6 +140,7 @@ export default function PosPage() {
     },
     [branchProducts],
   );
+
   const addByBarcode = useCallback(
     (code: string) => {
       const normalized = normalizeBarcode(code);
@@ -103,21 +174,20 @@ export default function PosPage() {
     },
     [addToCart, branchProducts],
   );
+
   /** Solo llena el campo; no agrega hasta que se pulse Agregar. */
-  const fillBarcodeFromScan = useCallback(
-    (code: string) => {
-      const normalized = normalizeBarcode(code);
-      if (!normalized) {
-        setError("Código de barras vacío.");
-        setMessage(null);
-        return;
-      }
-      setBarcodeInput(normalized);
-      setError(null);
-      setMessage(`Código leído: ${normalized}. Presiona Agregar.`);
-    },
-    [],
-  );
+  const fillBarcodeFromScan = useCallback((code: string) => {
+    const normalized = normalizeBarcode(code);
+    if (!normalized) {
+      setError("Código de barras vacío.");
+      setMessage(null);
+      return;
+    }
+    setBarcodeInput(normalized);
+    setError(null);
+    setMessage(`Código leído: ${normalized}. Presiona Agregar.`);
+  }, []);
+
   function changeQty(productId: string, delta: number) {
     const product = branchProducts.find((p) => p.id === productId);
     setCart((prev) =>
@@ -135,267 +205,419 @@ export default function PosPage() {
         .filter((item) => item.quantity > 0),
     );
   }
+
+  function setQty(productId: string, nextQty: number) {
+    const product = branchProducts.find((p) => p.id === productId);
+    if (!product) return;
+    const qty = Math.floor(Number(nextQty));
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setCart((prev) => prev.filter((i) => i.productId !== productId));
+      setError(null);
+      return;
+    }
+    if (qty > product.quantity) {
+      setError(
+        `Stock insuficiente de ${product.name}. Máximo ${product.quantity}.`,
+      );
+      setCart((prev) =>
+        prev.map((item) =>
+          item.productId === productId
+            ? { ...item, quantity: product.quantity }
+            : item,
+        ),
+      );
+      return;
+    }
+    setError(null);
+    setCart((prev) =>
+      prev.map((item) =>
+        item.productId === productId ? { ...item, quantity: qty } : item,
+      ),
+    );
+  }
+
   function clearCart() {
     setCart([]);
     setError(null);
   }
-  function onCheckout() {
-    const err = checkout(cart);
-    if (err) {
-      setError(err);
+
+  async function onCheckout() {
+    const saleTotal = total;
+    const result = checkout(cart);
+    if (result.error || !result.sale) {
+      setError(result.error ?? "No se pudo completar la venta.");
       setMessage(null);
       return;
     }
-    setMessage(`Venta registrada por ${formatMoney(total)}`);
+    setMessage(`Venta registrada por ${formatMoney(saleTotal)}`);
     setError(null);
     setCart([]);
+    setCartOpen(false);
+
+    if (!printTicket) return;
+
+    setPrinting(true);
+    try {
+      await printSaleTicket({
+        sale: result.sale,
+        branchName: currentBranchName,
+        companyName: data.settings?.companyName,
+        slogan: data.settings?.slogan,
+        address: data.settings?.address,
+        phone: data.settings?.phone,
+        alsoDownload: true,
+      });
+    } catch {
+      setError("La venta se registró, pero no se pudo imprimir el ticket.");
+    } finally {
+      setPrinting(false);
+    }
   }
-  return (
-    <BarcodeCapture onDetected={fillBarcodeFromScan}>
-      {({ openCamera, busy }) => (
-    <AppShell
-      title="Punto de venta"
-      subtitle={`POS sin facturación · ${currentBranchName}`}
-    >
-      <div className="grid min-h-0 flex-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-        <Panel className="flex min-h-0 w-full flex-col">
-          <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
-            <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
-              Productos
-            </h2>
-            <span className="text-xs text-[var(--muted)]">
-              {available.length} disponibles
+
+  function renderCartBody(opts?: { showMessages?: boolean }) {
+    const showMessages = opts?.showMessages ?? true;
+    return (
+      <>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+          {cart.map((item) => (
+            <div
+              key={item.productId}
+              className="flex items-center justify-between gap-3 rounded-md border border-[var(--line)] bg-[var(--bg-soft)] px-3 py-2"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <ProductThumb src={item.image} alt={item.name} size="sm" />
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{item.name}</p>
+                  <p className="text-xs text-[var(--muted)]">
+                    {formatMoney(item.price)} c/u
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="rounded-lg p-1.5 hover:bg-white"
+                  onClick={() => changeQty(item.productId, -1)}
+                  aria-label="Restar"
+                >
+                  <Minus size={14} />
+                </button>
+                <CartQtyInput
+                  value={item.quantity}
+                  max={
+                    branchProducts.find((p) => p.id === item.productId)
+                      ?.quantity ?? item.quantity
+                  }
+                  onCommit={(qty) => setQty(item.productId, qty)}
+                />
+                <button
+                  type="button"
+                  className="rounded-lg p-1.5 hover:bg-white"
+                  onClick={() => changeQty(item.productId, 1)}
+                  aria-label="Sumar"
+                >
+                  <Plus size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="ml-1 rounded-lg p-1.5 text-red-600 hover:bg-red-50"
+                  onClick={() =>
+                    setCart((prev) =>
+                      prev.filter((i) => i.productId !== item.productId),
+                    )
+                  }
+                  aria-label="Quitar"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+          {cart.length === 0 ? (
+            <div className="flex min-h-24 flex-1 items-center justify-center rounded-md border border-dashed border-[var(--line)] bg-[var(--bg-soft)]/60 px-3">
+              <p className="text-center text-sm text-[var(--muted)]">
+                Escanea un código o toca un producto.
+              </p>
+            </div>
+          ) : null}
+        </div>
+        <div className="mt-3 shrink-0 border-t border-[var(--line)] pt-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-[var(--muted)]">Total</span>
+            <span className="font-[family-name:var(--font-display)] text-2xl font-semibold">
+              {formatMoney(total)}
             </span>
           </div>
-          {error ? (
-            <p className="mb-3 shrink-0 border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          {showMessages && error ? (
+            <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
             </p>
           ) : null}
-          {message ? (
-            <p className="mb-3 shrink-0 border border-[var(--line)] bg-[var(--brand-soft)] px-3 py-2 text-sm text-[var(--brand)]">
+          {showMessages && message ? (
+            <p className="mt-2 rounded-md bg-[var(--brand-soft)] px-3 py-2 text-sm text-[var(--brand)]">
               {message}
             </p>
           ) : null}
-          <div className="mb-2 flex shrink-0 gap-2">
+          <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm">
             <input
-              className={`${inputClass} flex-1`}
-              placeholder="Buscar nombre…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              type="checkbox"
+              className="h-4 w-4 accent-[var(--brand)]"
+              checked={printTicket}
+              onChange={(e) => setPrintTicket(e.target.checked)}
             />
-          </div>
-          <div className="mb-3 flex shrink-0 gap-2">
-            <input
-              className={`${inputClass} flex-1 font-mono text-base`}
-              placeholder="O escribe el código y Enter"
-              value={barcodeInput}
-              onChange={(e) => setBarcodeInput(e.target.value)}
-              inputMode="numeric"
-              autoComplete="off"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addByBarcode(barcodeInput);
-                }
-              }}
-            />
+            <Printer size={15} className="shrink-0 text-[var(--muted)]" />
+            <span>Imprimir ticket al cobrar</span>
+          </label>
+          <div className="mt-3 flex gap-2">
             <button
               type="button"
-              className={`${buttonSecondary} min-h-11 shrink-0 px-4`}
-              onClick={() => addByBarcode(barcodeInput)}
+              className={`${buttonPrimary} min-h-11 flex-1`}
+              onClick={() => void onCheckout()}
+              disabled={cart.length === 0 || printing}
             >
-              Agregar
+              {printing
+                ? "Imprimiendo…"
+                : printTicket
+                  ? "Cobrar e imprimir"
+                  : "Cobrar"}
             </button>
             <button
               type="button"
-              className={`${buttonPrimary} min-h-11 w-11 shrink-0 px-0`}
-              onClick={openCamera}
-              disabled={busy}
-              aria-label={busy ? "Leyendo código…" : "Escanear código de barras"}
-              title={busy ? "Leyendo código…" : "Escanear código"}
+              className={buttonSecondary}
+              onClick={clearCart}
+              disabled={cart.length === 0 || printing}
             >
-              <ScanBarcode size={20} />
+              Limpiar
             </button>
           </div>
-          <div className="grid min-h-0 flex-1 auto-rows-max content-start gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {available.map((product) => (
-              <button
-                key={product.id}
-                type="button"
-                onClick={() => {
-                  const ok = addToCart(product.id);
-                  if (ok) setMessage(`Agregado: ${product.name}`);
-                }}
-                className="flex gap-3 rounded-2xl border border-[var(--line)] bg-white p-3 text-left shadow-sm transition hover:border-[var(--brand)] hover:shadow-md active:scale-[0.99]"
-              >
-                <ProductThumb
-                  src={product.image}
-                  alt={product.name}
-                  size="xl"
-                />
-                <span className="min-w-0 flex-1 self-center">
-                  <p className="font-semibold leading-snug">{product.name}</p>
-                  {product.barcode ? (
-                    <p className="mt-0.5 font-mono text-[10px] text-[var(--muted)]">
-                      {product.barcode}
-                    </p>
-                  ) : (
-                    <p className="mt-0.5 text-[10px] text-amber-700">
-                      Sin código
-                    </p>
-                  )}
-                  <div className="mt-2 flex items-center justify-between gap-2 text-sm">
-                    <span className="font-semibold text-[var(--brand)]">
-                      {formatMoney(product.price)}
-                    </span>
-                    <span className="text-[var(--muted)]">
-                      Stock {product.quantity}
-                    </span>
-                  </div>
-                </span>
-              </button>
-            ))}
-            {available.length === 0 ? (
-              <p className="col-span-full py-10 text-center text-sm text-[var(--muted)]">
-                No hay productos disponibles.
-              </p>
-            ) : null}
-          </div>
-        </Panel>
-        <aside className="flex min-h-0 w-full flex-col gap-3 self-start lg:sticky lg:top-3 lg:z-20 lg:max-h-[calc(100dvh-5.5rem)]">
-          <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden !p-3 sm:!p-4">
-            <div className="mb-2.5 flex shrink-0 items-center gap-2">
-              <ShoppingBag size={18} className="text-[var(--brand)]" />
-              <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
-                Carrito
-              </h2>
-            </div>
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
-              {cart.map((item) => (
-                <div
-                  key={item.productId}
-                  className="flex items-center justify-between gap-3 rounded-md border border-[var(--line)] bg-[var(--bg-soft)] px-3 py-2"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <ProductThumb
-                      src={item.image}
-                      alt={item.name}
-                      size="sm"
-                    />
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{item.name}</p>
-                      <p className="text-xs text-[var(--muted)]">
-                        {formatMoney(item.price)} c/u
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      className="rounded-lg p-1.5 hover:bg-white"
-                      onClick={() => changeQty(item.productId, -1)}
-                    >
-                      <Minus size={14} />
-                    </button>
-                    <span className="w-6 text-center text-sm font-semibold">
-                      {item.quantity}
-                    </span>
-                    <button
-                      type="button"
-                      className="rounded-lg p-1.5 hover:bg-white"
-                      onClick={() => changeQty(item.productId, 1)}
-                    >
-                      <Plus size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      className="ml-1 rounded-lg p-1.5 text-red-600 hover:bg-red-50"
-                      onClick={() =>
-                        setCart((prev) =>
-                          prev.filter((i) => i.productId !== item.productId),
-                        )
-                      }
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {cart.length === 0 ? (
-                <div className="flex h-full min-h-24 items-center justify-center rounded-md border border-dashed border-[var(--line)] bg-[var(--bg-soft)]/60 px-3">
-                  <p className="text-center text-sm text-[var(--muted)]">
-                    Escanea un código o toca un producto.
-                  </p>
-                </div>
-              ) : null}
-            </div>
-            <div className="mt-3 shrink-0 border-t border-[var(--line)] pt-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-[var(--muted)]">Total</span>
-                <span className="font-[family-name:var(--font-display)] text-2xl font-semibold">
-                  {formatMoney(total)}
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <BarcodeCapture onDetected={fillBarcodeFromScan}>
+      {({ openCamera, busy }) => (
+        <AppShell
+          title="Punto de venta"
+          subtitle={`POS sin facturación · ${currentBranchName}`}
+        >
+          <div className="flex min-h-0 flex-1 flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start xl:grid-cols-[minmax(0,1fr)_24rem]">
+            <Panel className="flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:max-h-[calc(100dvh-5.5rem)]">
+              <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
+                <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+                  Productos
+                </h2>
+                <span className="text-xs text-[var(--muted)]">
+                  {available.length} disponibles
                 </span>
               </div>
-              {error ? (
-                <p className="mt-2 hidden rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 lg:block">
+              {error && !cartOpen ? (
+                <p className="mb-3 shrink-0 border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 lg:hidden">
                   {error}
                 </p>
               ) : null}
-              {message ? (
-                <p className="mt-2 hidden rounded-md bg-[var(--brand-soft)] px-3 py-2 text-sm text-[var(--brand)] lg:block">
+              {error ? (
+                <p className="mb-3 hidden shrink-0 border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 lg:block">
+                  {error}
+                </p>
+              ) : null}
+              {message && !cartOpen ? (
+                <p className="mb-3 shrink-0 border border-[var(--line)] bg-[var(--brand-soft)] px-3 py-2 text-sm text-[var(--brand)] lg:hidden">
                   {message}
                 </p>
               ) : null}
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  className={`${buttonPrimary} min-h-11 flex-1`}
-                  onClick={onCheckout}
-                  disabled={cart.length === 0}
-                >
-                  Cobrar
-                </button>
-                <button
-                  type="button"
-                  className={buttonSecondary}
-                  onClick={clearCart}
-                  disabled={cart.length === 0}
-                >
-                  Limpiar
-                </button>
-              </div>
-            </div>
-          </Panel>
-          <Panel className="shrink-0 !p-3 sm:!p-4">
-            <h3 className="font-semibold">Últimas ventas</h3>
-            <div className="mt-2 max-h-36 space-y-2 overflow-y-auto lg:max-h-40">
-              {branchSales.slice(0, 6).map((sale) => (
-                <div
-                  key={sale.id}
-                  className="flex items-center justify-between rounded-lg bg-[var(--bg-soft)] px-3 py-2 text-sm"
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium">{formatMoney(sale.total)}</p>
-                    <p className="truncate text-xs text-[var(--muted)]">
-                      {sale.userName} · {formatDate(sale.createdAt)}
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-xs text-[var(--muted)]">
-                    {sale.items.length} ítems
-                  </span>
-                </div>
-              ))}
-              {branchSales.length === 0 ? (
-                <p className="text-sm text-[var(--muted)]">
-                  Aún no hay ventas en esta sucursal.
+              {message ? (
+                <p className="mb-3 hidden shrink-0 border border-[var(--line)] bg-[var(--brand-soft)] px-3 py-2 text-sm text-[var(--brand)] lg:block">
+                  {message}
                 </p>
               ) : null}
+              <div className="mb-2 flex shrink-0 gap-2">
+                <input
+                  className={`${inputClass} flex-1`}
+                  placeholder="Buscar nombre…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
+              <div className="mb-3 flex shrink-0 gap-2">
+                <input
+                  className={`${inputClass} flex-1 font-mono text-base`}
+                  placeholder="O escribe el código y Enter"
+                  value={barcodeInput}
+                  onChange={(e) => setBarcodeInput(e.target.value)}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addByBarcode(barcodeInput);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className={`${buttonSecondary} min-h-11 shrink-0 px-4`}
+                  onClick={() => addByBarcode(barcodeInput)}
+                >
+                  Agregar
+                </button>
+                <button
+                  type="button"
+                  className={`${buttonPrimary} min-h-11 w-11 shrink-0 px-0`}
+                  onClick={openCamera}
+                  disabled={busy}
+                  aria-label={
+                    busy ? "Leyendo código…" : "Escanear código de barras"
+                  }
+                  title={busy ? "Leyendo código…" : "Escanear código"}
+                >
+                  <ScanBarcode size={20} />
+                </button>
+              </div>
+              <div className="grid min-h-0 flex-1 auto-rows-max content-start gap-2 overflow-y-auto pb-20 sm:grid-cols-2 lg:pb-0 xl:grid-cols-3 2xl:grid-cols-4">
+                {available.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => {
+                      const ok = addToCart(product.id);
+                      if (ok) setMessage(`Agregado: ${product.name}`);
+                    }}
+                    className="flex gap-3 rounded-2xl border border-[var(--line)] bg-white p-3 text-left shadow-sm transition hover:border-[var(--brand)] hover:shadow-md active:scale-[0.99]"
+                  >
+                    <ProductThumb
+                      src={product.image}
+                      alt={product.name}
+                      size="xl"
+                    />
+                    <span className="min-w-0 flex-1 self-center">
+                      <p className="font-semibold leading-snug">
+                        {product.name}
+                      </p>
+                      {product.barcode ? (
+                        <p className="mt-0.5 font-mono text-[10px] text-[var(--muted)]">
+                          {product.barcode}
+                        </p>
+                      ) : (
+                        <p className="mt-0.5 text-[10px] text-amber-700">
+                          Sin código
+                        </p>
+                      )}
+                      <div className="mt-2 flex items-center justify-between gap-2 text-sm">
+                        <span className="font-semibold text-[var(--brand)]">
+                          {formatMoney(product.price)}
+                        </span>
+                        <span className="text-[var(--muted)]">
+                          Stock {product.quantity}
+                        </span>
+                      </div>
+                    </span>
+                  </button>
+                ))}
+                {available.length === 0 ? (
+                  <p className="col-span-full py-10 text-center text-sm text-[var(--muted)]">
+                    No hay productos disponibles.
+                  </p>
+                ) : null}
+              </div>
+            </Panel>
+
+            {/* Desktop: columna sticky */}
+            <aside className="hidden min-h-0 w-full flex-col gap-3 self-start lg:sticky lg:top-3 lg:z-20 lg:flex lg:max-h-[calc(100dvh-5.5rem)]">
+              <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden !p-3 sm:!p-4">
+                <div className="mb-2.5 flex shrink-0 items-center gap-2">
+                  <ShoppingBag size={18} className="text-[var(--brand)]" />
+                  <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+                    Carrito
+                  </h2>
+                </div>
+                {renderCartBody({ showMessages: true })}
+              </Panel>
+              <Panel className="shrink-0 !p-3 sm:!p-4">
+                <h3 className="font-semibold">Últimas ventas</h3>
+                <div className="mt-2 max-h-36 space-y-2 overflow-y-auto lg:max-h-40">
+                  {branchSales.slice(0, 6).map((sale) => (
+                    <div
+                      key={sale.id}
+                      className="flex items-center justify-between rounded-lg bg-[var(--bg-soft)] px-3 py-2 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium">
+                          {formatMoney(sale.total)}
+                        </p>
+                        <p className="truncate text-xs text-[var(--muted)]">
+                          {sale.userName} · {formatDate(sale.createdAt)}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-xs text-[var(--muted)]">
+                        {sale.items.length} ítems
+                      </span>
+                    </div>
+                  ))}
+                  {branchSales.length === 0 ? (
+                    <p className="text-sm text-[var(--muted)]">
+                      Aún no hay ventas en esta sucursal.
+                    </p>
+                  ) : null}
+                </div>
+              </Panel>
+            </aside>
+          </div>
+
+          {/* Móvil: solo ícono del carrito */}
+          <button
+            type="button"
+            className="fixed right-4 z-[55] flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand)] text-white shadow-lg shadow-[var(--brand)]/30 transition active:scale-95 lg:hidden"
+            style={{
+              bottom:
+                "calc(3.75rem + env(safe-area-inset-bottom, 0px) + 0.75rem)",
+            }}
+            onClick={() => setCartOpen(true)}
+            aria-label="Abrir carrito"
+          >
+            <ShoppingBag size={24} />
+            {cartUnits > 0 ? (
+              <span className="absolute -right-1 -top-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-[var(--navy)] px-1.5 text-[11px] font-bold leading-none text-white">
+                {cartUnits > 99 ? "99+" : cartUnits}
+              </span>
+            ) : null}
+          </button>
+
+          {/* Móvil: panel del carrito */}
+          {cartOpen ? (
+            <div className="fixed inset-0 z-[70] flex flex-col bg-[var(--bg)] lg:hidden">
+              <div className="flex shrink-0 items-center justify-between border-b border-[var(--line)] bg-white px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+                <div className="flex items-center gap-2">
+                  <ShoppingBag size={20} className="text-[var(--brand)]" />
+                  <div>
+                    <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold leading-tight">
+                      Carrito
+                    </h2>
+                    <p className="text-[11px] text-[var(--muted)]">
+                      {cartUnits === 0
+                        ? "Vacío"
+                        : `${cartUnits} ítem${cartUnits === 1 ? "" : "s"} · ${formatMoney(total)}`}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-xl p-2 text-[var(--muted)] hover:bg-[var(--bg-soft)]"
+                  onClick={() => setCartOpen(false)}
+                  aria-label="Cerrar carrito"
+                >
+                  <X size={22} />
+                </button>
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden !p-3">
+                  {renderCartBody({ showMessages: true })}
+                </Panel>
+              </div>
             </div>
-          </Panel>
-        </aside>
-      </div>
-    </AppShell>
+          ) : null}
+        </AppShell>
       )}
     </BarcodeCapture>
   );

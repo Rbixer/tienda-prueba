@@ -7,6 +7,7 @@ export type Permission =
   | "inventario"
   | "reportes"
   | "bodega"
+  | "proveedores"
   | "sucursales"
   | "usuarios"
   | "configuracion";
@@ -25,7 +26,13 @@ export type User = {
   username: string;
   password: string;
   role: Role;
+  /** Sucursal principal / por defecto */
   branchId: string;
+  /**
+   * Tiendas que el usuario puede ver/operar.
+   * Admin vacío = todas. Vendedor siempre incluye branchId.
+   */
+  allowedBranchIds: string[];
   /** Módulos a los que puede acceder (admin siempre tiene todos) */
   permissions: Permission[];
 };
@@ -85,6 +92,37 @@ export type Transfer = {
   createdAt: string;
 };
 
+export type Supplier = {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  notes?: string;
+  /** Saldo pendiente a pagar */
+  balance: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SupplierPaymentMethod =
+  | "efectivo"
+  | "transferencia"
+  | "cheque"
+  | "otro";
+
+export type SupplierPayment = {
+  id: string;
+  supplierId: string;
+  amount: number;
+  method: SupplierPaymentMethod;
+  note?: string;
+  paidAt: string;
+  userId: string;
+  userName: string;
+  createdAt: string;
+};
+
 export type PdfTextStyle = {
   bold?: boolean;
   italic?: boolean;
@@ -118,6 +156,7 @@ export type Session = {
   username: string;
   role: Role;
   branchId: string;
+  allowedBranchIds: string[];
   permissions: Permission[];
 };
 
@@ -127,5 +166,7 @@ export type StoreData = {
   products: Product[];
   sales: Sale[];
   transfers: Transfer[];
+  suppliers: Supplier[];
+  supplierPayments: SupplierPayment[];
   settings: CompanySettings;
 };
