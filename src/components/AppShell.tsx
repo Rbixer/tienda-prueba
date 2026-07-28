@@ -138,6 +138,14 @@ export function AppShell({
     logout,
     currentBranchName,
     syncError,
+    isOnline,
+    pendingSync,
+    pendingOfflineCount,
+    offlineConflicts,
+    lastFlushReport,
+    flushSync,
+    retryOfflineSale,
+    discardOfflineSale,
     data,
     visibleBranches,
     setActiveBranch,
@@ -145,6 +153,7 @@ export function AppShell({
   const companyName = data.settings?.companyName ?? "MI BARRIO";
   const canConfig = hasPermission(session, "configuracion");
   const [navCollapsed, setNavCollapsed] = useState(false);
+  const [showConflictDetail, setShowConflictDetail] = useState(true);
 
   useEffect(() => {
     setNavCollapsed(localStorage.getItem("tb-nav-collapsed") === "1");
@@ -276,8 +285,112 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="app-shell__main flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto px-3 pb-4 pt-3 sm:px-5 md:pb-5 md:pt-4">
-          {syncError ? (
+        <main className="app-shell__main flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-3 pb-5 pt-3 sm:px-5 md:pb-5 md:pt-4">
+          {!isOnline ? (
+            <div className="mb-3 shrink-0 rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-xs text-slate-800">
+              Sin conexión · el POS puede vender; los cambios se suben al
+              reconectar
+              {pendingOfflineCount > 0
+                ? ` · ${pendingOfflineCount} venta(s) pendiente(s)`
+                : ""}
+            </div>
+          ) : offlineConflicts.length > 0 ? (
+            <div className="mb-3 shrink-0 space-y-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-950">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold">
+                  {offlineConflicts.length} venta(s) con conflicto de stock
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md bg-rose-800 px-2.5 py-1 font-semibold text-white"
+                    onClick={() => void flushSync()}
+                  >
+                    Reintentar todas
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-rose-300 px-2.5 py-1 font-medium"
+                    onClick={() => setShowConflictDetail((v) => !v)}
+                  >
+                    {showConflictDetail ? "Ocultar" : "Detalle"}
+                  </button>
+                </div>
+              </div>
+              {showConflictDetail
+                ? offlineConflicts.map((item) => (
+                    <div
+                      key={item.saleId}
+                      className="rounded-lg border border-rose-200/80 bg-white/70 px-2.5 py-2"
+                    >
+                      <p className="font-medium">
+                        Venta {item.saleId.slice(-8)} · Q
+                        {item.sale.total.toFixed(2)} · intento {item.attempts}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-rose-800">
+                        {item.lastError}
+                      </p>
+                      {item.conflicts?.length ? (
+                        <ul className="mt-1 list-inside list-disc text-[11px]">
+                          {item.conflicts.map((c) => (
+                            <li key={`${item.saleId}-${c.productId}`}>
+                              {c.name}: pide {c.needed}, hay {c.available}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="rounded-md bg-rose-700 px-2 py-1 font-semibold text-white"
+                          onClick={() => void retryOfflineSale(item.saleId)}
+                        >
+                          Reintentar
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md border border-rose-300 px-2 py-1"
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                "¿Descartar esta venta offline? No se subirá al servidor.",
+                              )
+                            ) {
+                              discardOfflineSale(item.saleId);
+                            }
+                          }}
+                        >
+                          Descartar
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                : null}
+              {lastFlushReport?.messages?.length ? (
+                <p className="text-[10px] text-rose-800/80">
+                  Último sync: {lastFlushReport.synced} ok ·{" "}
+                  {lastFlushReport.conflicts} conflicto(s) ·{" "}
+                  {lastFlushReport.failed} fallida(s)
+                </p>
+              ) : null}
+            </div>
+          ) : pendingSync ? (
+            <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
+              <span>
+                Sincronización pendiente
+                {pendingOfflineCount > 0
+                  ? ` · ${pendingOfflineCount} venta(s) offline`
+                  : ""}
+              </span>
+              <button
+                type="button"
+                className="rounded-md bg-sky-700 px-2.5 py-1 font-semibold text-white"
+                onClick={() => void flushSync()}
+              >
+                Sincronizar ahora
+              </button>
+            </div>
+          ) : syncError ? (
             <div className="mb-3 shrink-0 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               {syncError}
             </div>

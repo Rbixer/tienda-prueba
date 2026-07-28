@@ -11,9 +11,9 @@ export function MarginChart({ points }: Props) {
   const marginPct = revenue > 0 ? (profit / revenue) * 100 : 0;
 
   return (
-    <div>
+    <div className="min-w-0 max-w-full">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
             Margen estimado · 7 días
           </p>

@@ -63,6 +63,65 @@ body {
   touch-action: manipulation;
 }
 
+/* Evita flash blanco al abrir la PWA instalada */
+html.pwa-splash-pending,
+html.pwa-splash-pending body {
+  background: #0b2545;
+}
+
+@media (display-mode: standalone) {
+  html.pwa-splash-pending,
+  html.pwa-splash-pending body {
+    background: #0b2545;
+  }
+}
+
+.pwa-boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  background: #0b2545;
+  color: #fff;
+  transition: opacity 0.28s ease, visibility 0.28s ease;
+}
+
+.pwa-boot-splash__mark {
+  display: flex;
+  height: 4.75rem;
+  width: 4.75rem;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 1.15rem;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+.pwa-boot-splash__mark img {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
+
+.pwa-boot-splash__name {
+  margin: 0;
+  font-family: var(--font-display), "Outfit", system-ui, sans-serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.pwa-boot-splash--hide {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* Evita zoom iOS en inputs y mejora toque en móvil */
 @media (max-width: 767px) {
   input,
@@ -102,6 +161,11 @@ body {
 
 .app-shell__bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Evita que el contenido horizontal empuje el viewport en móvil */
+.app-shell__main > * {
+  max-width: 100%;
 }
 
 .bottom-nav-scroll {
@@ -425,22 +489,6 @@ h3 {
   cursor: not-allowed;
 }
 
-.login-unity__demo {
-  margin-top: 0.05rem;
-  padding-top: 0.65rem;
-  border-top: 1px solid #e8edf4;
-  display: grid;
-  gap: 0.15rem;
-  font-size: 0.72rem;
-  color: #64748b;
-  text-align: center;
-}
-
-.login-unity__demo strong {
-  color: #0f172a;
-  margin-right: 0.3rem;
-}
-
 .login-unity-rise {
   animation: loginUnityRise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -449,7 +497,7 @@ h3 {
   animation: loginUnitySlide 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both;
 }
 
-/* Pantallas bajas: compactar marca y demos */
+/* Pantallas bajas: compactar marca */
 @media (max-height: 760px) {
   .login-unity__tagline {
     display: none;
@@ -461,10 +509,6 @@ h3 {
 }
 
 @media (max-height: 680px) {
-  .login-unity__demo {
-    display: none;
-  }
-
   .login-unity .login-logo-box {
     height: min(22vw, 12vh, 5.5rem) !important;
     width: min(22vw, 12vh, 5.5rem) !important;

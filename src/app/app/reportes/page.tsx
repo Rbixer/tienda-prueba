@@ -2,7 +2,6 @@
 import { useMemo, useState } from "react";
 import {
   Boxes,
-  Calendar,
   ChevronDown,
   Download,
   Receipt,
@@ -121,11 +120,11 @@ function KpiCard({
             <Icon size={18} />
           </span>
         </div>
-        <p className="relative mt-4 truncate font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight sm:text-3xl">
+        <p className="relative mt-4 break-words font-[family-name:var(--font-display)] text-[clamp(1.15rem,5vw,1.875rem)] font-bold leading-tight tracking-tight">
           {value}
         </p>
         {hint ? (
-          <p className="relative mt-1.5 truncate text-xs text-white/55">
+          <p className="relative mt-1.5 line-clamp-2 text-xs text-white/55">
             {hint}
           </p>
         ) : null}
@@ -150,11 +149,11 @@ function KpiCard({
           <Icon size={18} />
         </span>
       </div>
-      <p className="mt-4 truncate font-[family-name:var(--font-display)] text-2xl font-bold leading-none tracking-tight text-[var(--ink)] sm:text-[1.7rem]">
+      <p className="mt-4 break-words font-[family-name:var(--font-display)] text-[clamp(1.15rem,5vw,1.7rem)] font-bold leading-tight tracking-tight text-[var(--ink)]">
         {value}
       </p>
       {hint ? (
-        <p className="mt-1.5 truncate text-xs text-[var(--muted)]">{hint}</p>
+        <p className="mt-1.5 line-clamp-2 text-xs text-[var(--muted)]">{hint}</p>
       ) : null}
     </section>
   );
@@ -224,20 +223,17 @@ export default function ReportesPage() {
         session?.role === "vendedor" ? " (tu sucursal)" : ""
       }.`}
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="flex w-full min-w-0 flex-col gap-3 sm:gap-4">
         {/* Barra de control */}
-        <div className="flex shrink-0 flex-col gap-3 rounded-2xl border border-[var(--line)] bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-3.5">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--slate-soft)] text-[var(--navy)] sm:flex">
-              <Calendar size={17} />
-            </span>
-            <div className="inline-flex shrink-0 gap-1 rounded-xl bg-[var(--slate-soft)] p-1 ring-1 ring-[var(--line)]">
+        <div className="flex flex-col gap-3 rounded-2xl border border-[var(--line)] bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-3.5">
+          <div className="min-w-0 w-full sm:w-auto">
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-[var(--slate-soft)] p-1 ring-1 ring-[var(--line)] sm:inline-flex">
               {periods.map((p) => (
                 <button
                   key={p.id}
                   type="button"
                   onClick={() => setPeriod(p.id)}
-                  className={`shrink-0 rounded-lg px-3.5 py-2 text-sm font-semibold transition sm:px-4 ${
+                  className={`min-h-10 rounded-lg px-2.5 py-2 text-center text-xs font-semibold transition sm:min-h-0 sm:shrink-0 sm:px-4 sm:text-sm ${
                     period === p.id
                       ? "bg-[var(--navy)] text-white shadow-[0_2px_8px_rgba(11,37,69,0.25)]"
                       : "text-[var(--muted)] hover:text-[var(--navy)]"
@@ -248,13 +244,16 @@ export default function ReportesPage() {
               ))}
             </div>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-2.5">
+            <span className="text-center text-xs text-[var(--muted)] sm:hidden">
+              {tickets} venta{tickets === 1 ? "" : "s"} · {periodLabel}
+            </span>
             <span className="hidden text-xs text-[var(--muted)] lg:inline">
               {tickets} venta{tickets === 1 ? "" : "s"} · {periodLabel}
             </span>
             <button
               type="button"
-              className={`${buttonSecondary} min-h-11 w-full sm:w-auto`}
+              className={`${buttonSecondary} w-full sm:w-auto`}
               onClick={onDownload}
               disabled={downloading || filtered.length === 0}
             >
@@ -265,7 +264,7 @@ export default function ReportesPage() {
         </div>
 
         {/* KPIs */}
-        <div className="grid shrink-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-4">
           <KpiCard
             featured
             label="Total vendido"
@@ -297,13 +296,13 @@ export default function ReportesPage() {
         </div>
 
         {/* Detalle */}
-        <Panel className="flex min-h-0 flex-1 flex-col !p-0">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3.5">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--bg-soft)] text-[var(--navy)]">
+        <Panel className="!p-0">
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-3 sm:px-4 sm:py-3.5">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-soft)] text-[var(--navy)]">
                 <Receipt size={16} />
               </span>
-              <div>
+              <div className="min-w-0">
                 <h2 className="font-[family-name:var(--font-display)] text-base font-semibold leading-tight">
                   Detalle de ventas
                 </h2>
@@ -317,15 +316,15 @@ export default function ReportesPage() {
             </span>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+          <div className="max-h-[min(70dvh,40rem)] overflow-y-auto overscroll-y-contain px-2.5 py-3 sm:px-4">
             {groups.map((group) => (
               <section key={group.label} className="mb-4 last:mb-0">
-                <div className="mb-2 flex items-center gap-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+                <div className="mb-2 flex min-w-0 items-center gap-2 px-0.5">
+                  <p className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
                     {group.label}
                   </p>
-                  <span className="h-px flex-1 bg-[var(--line)]" aria-hidden />
-                  <p className="text-[11px] font-semibold text-[var(--ink)]">
+                  <span className="h-px min-w-4 flex-1 bg-[var(--line)]" aria-hidden />
+                  <p className="shrink-0 text-[11px] font-semibold tabular-nums text-[var(--ink)]">
                     {formatMoney(
                       group.sales.reduce((n, s) => n + s.total, 0),
                     )}
@@ -350,17 +349,17 @@ export default function ReportesPage() {
                       >
                         <button
                           type="button"
-                          className="flex w-full items-center gap-3 px-3 py-3 text-left sm:px-4"
+                          className="flex w-full items-center gap-2.5 px-2.5 py-3 text-left sm:gap-3 sm:px-4"
                           onClick={() => setOpenId(open ? null : sale.id)}
                           aria-expanded={open}
                         >
-                          <span className="flex h-10 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--slate-soft)] text-[11px] font-bold leading-none tracking-tight text-[var(--navy)] ring-1 ring-[var(--line)]">
+                          <span className="flex h-10 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--slate-soft)] text-[10px] font-bold leading-none tracking-tight text-[var(--navy)] ring-1 ring-[var(--line)] sm:w-12 sm:text-[11px]">
                             {timeOnly(sale.createdAt)}
                           </span>
 
                           <span className="min-w-0 flex-1">
-                            <span className="flex items-baseline gap-2">
-                              <span className="font-[family-name:var(--font-display)] text-base font-bold text-[var(--ink)]">
+                            <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                              <span className="break-words font-[family-name:var(--font-display)] text-base font-bold tabular-nums text-[var(--ink)]">
                                 {formatMoney(sale.total)}
                               </span>
                               <span className="text-[11px] text-[var(--muted)]">
@@ -387,7 +386,7 @@ export default function ReportesPage() {
                         </button>
 
                         {open ? (
-                          <div className="border-t border-[var(--line)] bg-[var(--bg-soft)]/60 px-3 py-3 sm:px-4">
+                          <div className="border-t border-[var(--line)] bg-[var(--bg-soft)]/60 px-2.5 py-3 sm:px-4">
                             <ul className="space-y-2">
                               {sale.items.map((item) => (
                                 <li
@@ -407,7 +406,7 @@ export default function ReportesPage() {
                                       {item.quantity} × {formatMoney(item.price)}
                                     </p>
                                   </div>
-                                  <span className="shrink-0 text-sm font-semibold text-[var(--ink)]">
+                                  <span className="shrink-0 text-sm font-semibold tabular-nums text-[var(--ink)]">
                                     {formatMoney(item.price * item.quantity)}
                                   </span>
                                 </li>
@@ -417,7 +416,7 @@ export default function ReportesPage() {
                               <span className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
                                 Total
                               </span>
-                              <span className="font-[family-name:var(--font-display)] text-base font-bold text-[var(--navy)]">
+                              <span className="font-[family-name:var(--font-display)] text-base font-bold tabular-nums text-[var(--navy)]">
                                 {formatMoney(sale.total)}
                               </span>
                             </div>

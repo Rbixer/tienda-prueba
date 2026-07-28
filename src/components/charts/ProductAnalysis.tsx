@@ -54,8 +54,8 @@ export function ProductAnalysis({ insights }: Props) {
         </div>
       </div>
 
-      {/* Móvil: tarjetas */}
-      <div className="space-y-2 md:hidden">
+      {/* Móvil/tablet: tarjetas */}
+      <div className="space-y-2 lg:hidden">
         {rows.map((row) => (
           <div
             key={row.productId}
@@ -72,7 +72,7 @@ export function ProductAnalysis({ insights }: Props) {
               ) : null}
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
-                  <p className="truncate font-semibold">{row.name}</p>
+                  <p className="min-w-0 break-words font-semibold">{row.name}</p>
                   <span
                     className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold ${statusClass[row.status]}`}
                   >
@@ -91,9 +91,9 @@ export function ProductAnalysis({ insights }: Props) {
                     <p className="text-[var(--muted)]">Stock</p>
                     <p className="font-semibold">{row.stock}</p>
                   </div>
-                  <div className="rounded-lg bg-white px-1 py-1.5">
+                  <div className="min-w-0 rounded-lg bg-white px-1 py-1.5">
                     <p className="text-[var(--muted)]">Ingreso</p>
-                    <p className="truncate font-semibold">
+                    <p className="break-all font-semibold tabular-nums">
                       {formatMoney(row.revenue)}
                     </p>
                   </div>
@@ -105,7 +105,7 @@ export function ProductAnalysis({ insights }: Props) {
       </div>
 
       {/* Desktop: tabla */}
-      <div className="hidden max-w-full overflow-x-auto md:block">
+      <div className="hidden max-w-full overflow-x-auto lg:block">
         <table className="w-full min-w-[36rem] text-left text-sm">
           <thead>
             <tr className="border-b border-[var(--line)] text-[10px] uppercase tracking-[0.08em] text-[var(--muted)]">

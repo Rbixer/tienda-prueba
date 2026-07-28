@@ -10,6 +10,22 @@ import {
   type ReactNode,
 } from "react";
 import { SESSION_KEY, createInitialData, uid, getCostPrice, normalizePdfStyle } from "@/lib/store";
+import { applyCheckout } from "@/lib/checkout";
+import {
+  clearPendingAfterSync,
+  discardOfflineSale as discardOfflineSaleStorage,
+  enqueueOfflineSale,
+  isBrowserOnline,
+  openOfflineCount,
+  readOfflineQueue,
+  readPendingSync,
+  replayOfflineQueue,
+  resetOfflineSaleForRetry,
+  writeOfflineQueue,
+  writePendingSync,
+  type FlushReport,
+  type OfflineQueueItem,
+} from "@/lib/offline";
 import {
   canManageUsers,
   hasPermission,
@@ -19,10 +35,16 @@ import {
   userCanAccessBranch,
 } from "@/lib/permissions";
 import {
+  AuthRequiredError,
+  StoreConflictError,
+  apiLogin,
+  apiLogout,
+  apiMe,
   fetchStore,
   mergeStores,
   readLocalStore,
   saveStore,
+  writeLocalStore,
 } from "@/lib/sync";
 import type {
   CompanySettings,
@@ -43,11 +65,25 @@ import type {
 type AuthContextValue = {
   ready: boolean;
   syncError: string | null;
+  isOnline: boolean;
+  pendingSync: boolean;
+  pendingOfflineCount: number;
+  offlineConflicts: OfflineQueueItem[];
+  lastFlushReport: FlushReport | null;
+  flushSync: () => Promise<FlushReport | null>;
+  retryOfflineSale: (saleId: string) => Promise<void>;
+  discardOfflineSale: (saleId: string) => void;
   session: Session | null;
   data: StoreData;
-  login: (username: string, password: string) => string | null;
+  login: (username: string, password: string) => Promise<string | null>;
   logout: () => void;
   setActiveBranch: (branchId: string) => void;
+  createBranch: (input: { name: string; address: string }) => string | null;
+  updateBranch: (
+    id: string,
+    input: { name?: string; address?: string },
+  ) => string | null;
+  deleteBranch: (id: string) => string | null;
   addProduct: (input: {
     name: string;
     price: number;
@@ -93,6 +129,7 @@ type AuthContextValue = {
   checkout: (items: SaleItem[]) => {
     error: string | null;
     sale?: Sale;
+    offline?: boolean;
   };
   transferStock: (input: {
     fromBranchId: string;
@@ -201,104 +238,370 @@ function loadSession(): Session | null {
     return null;
   }
 }
+function withConflictSalesVisible(
+  store: StoreData,
+  queue: OfflineQueueItem[],
+): StoreData {
+  let sales = [...store.sales];
+  for (const item of queue) {
+    if (
+      (item.status === "conflict" || item.status === "failed") &&
+      !sales.some((s) => s.id === item.saleId)
+    ) {
+      sales = [item.sale, ...sales];
+    }
+  }
+  return { ...store, sales };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [pendingSync, setPendingSync] = useState(false);
+  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
+  const [offlineConflicts, setOfflineConflicts] = useState<OfflineQueueItem[]>(
+    [],
+  );
+  const [lastFlushReport, setLastFlushReport] = useState<FlushReport | null>(
+    null,
+  );
   const [data, setData] = useState<StoreData>(createInitialData);
   const [session, setSession] = useState<Session | null>(null);
   const dataRef = useRef(data);
   const savingRef = useRef(false);
+  const pendingRef = useRef(false);
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
   useEffect(() => {
+    pendingRef.current = pendingSync;
+  }, [pendingSync]);
+
+  const refreshQueueState = useCallback((items?: OfflineQueueItem[]) => {
+    const queue = items ?? readOfflineQueue();
+    const open = openOfflineCount(queue);
+    const conflicts = queue.filter(
+      (i) => i.status === "conflict" || i.status === "failed",
+    );
+    setPendingOfflineCount(open);
+    setOfflineConflicts(conflicts);
+    const pending = open > 0 || readPendingSync();
+    setPendingSync(pending);
+    pendingRef.current = pending;
+  }, []);
+
+  useEffect(() => {
+    setIsOnline(isBrowserOnline());
+    refreshQueueState();
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [refreshQueueState]);
+
+  const markPending = useCallback(
+    (sale?: Sale) => {
+      if (sale) {
+        const list = enqueueOfflineSale(sale);
+        refreshQueueState(list);
+      } else {
+        writePendingSync(true);
+        refreshQueueState();
+      }
+    },
+    [refreshQueueState],
+  );
+
+  const clearPending = useCallback(() => {
+    clearPendingAfterSync();
+    refreshQueueState();
+  }, [refreshQueueState]);
+
+  useEffect(() => {
     let cancelled = false;
     async function boot() {
       try {
-        const server = await fetchStore();
-        const local = readLocalStore();
-        const merged = mergeStores(server, local);
-        const needsUpload =
-          !!local &&
-          (merged.sales.length !== server.sales.length ||
-            merged.products.length !== server.products.length ||
-            merged.users.length !== server.users.length);
-        if (needsUpload) {
-          await saveStore(merged);
-        }
-        if (!cancelled) {
-          setData(merged);
-          setSyncError(null);
+        const me = await apiMe();
+        if (cancelled) return;
+        if (me) {
           const existing = loadSession();
-          if (existing) {
-            const user = merged.users.find((u) => u.id === existing.userId);
-            if (user) {
-              setSession(
-                sessionFromUser(
-                  user,
-                  existing.role === "administrador"
-                    ? existing.branchId
-                    : user.branchId,
-                ),
-              );
-            } else {
-              setSession(null);
-              localStorage.removeItem(SESSION_KEY);
+          let nextSession = me.session;
+          if (
+            existing?.userId === me.session.userId &&
+            existing.role === "administrador" &&
+            me.store.branches.some(
+              (b) => b.id === existing.branchId && !b.isWarehouse,
+            )
+          ) {
+            nextSession = { ...me.session, branchId: existing.branchId };
+          }
+          const local = readLocalStore();
+          const hadPending = readPendingSync();
+          const merged = mergeStores(me.store, local);
+          const needsUpload =
+            hadPending ||
+            (!!local &&
+              (merged.sales.length !== me.store.sales.length ||
+                merged.products.length !== me.store.products.length ||
+                merged.users.length !== me.store.users.length));
+          if (needsUpload) {
+            try {
+              const saved = await saveStore({
+                ...merged,
+                version: me.store.version,
+              });
+              if (!cancelled) {
+                setData(saved);
+                clearPending();
+              }
+            } catch {
+              if (!cancelled) {
+                setData(merged);
+                writeLocalStore(merged);
+                markPending();
+                setSyncError(
+                  "Hay cambios locales pendientes de sincronizar.",
+                );
+              }
             }
+          } else if (!cancelled) {
+            setData(me.store);
+            clearPending();
+          }
+          if (!cancelled) {
+            setSession(nextSession);
+            localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+            if (!needsUpload) setSyncError(null);
+          }
+        } else {
+          localStorage.removeItem(SESSION_KEY);
+          if (!cancelled) {
+            setSession(null);
+            setData(createInitialData());
+            setSyncError(null);
           }
         }
       } catch {
         const local = readLocalStore() ?? createInitialData();
+        const existing = loadSession();
         if (!cancelled) {
           setData(local);
-          setSyncError(
-            "Sin conexión al servidor compartido. Los datos pueden no sincronizarse con otros dispositivos.",
-          );
-          const existing = loadSession();
           if (existing) {
-            const user = local.users.find((u) => u.id === existing.userId);
-            if (user) {
-              setSession(
-                sessionFromUser(
-                  user,
-                  existing.role === "administrador"
-                    ? existing.branchId
-                    : user.branchId,
-                ),
-              );
-            } else {
-              setSession(null);
-              localStorage.removeItem(SESSION_KEY);
-            }
+            setSession(existing);
+            markPending();
+            setSyncError(
+              "Modo offline: puedes vender; se sincronizará al recuperar red.",
+            );
+          } else {
+            setSession(null);
+            setSyncError(null);
           }
         }
       } finally {
-        if (!cancelled) {
-          setReady(true);
-        }
+        if (!cancelled) setReady(true);
       }
     }
     boot();
     return () => {
       cancelled = true;
     };
-  }, []);
-  // Sincroniza ventas/productos desde el servidor (local ↔ PWA)
+  }, [clearPending, markPending]);
+
+  const flushSync = useCallback(async (): Promise<FlushReport | null> => {
+    if (savingRef.current) return null;
+    savingRef.current = true;
+    try {
+      let server: StoreData;
+      try {
+        server = await fetchStore();
+      } catch (err) {
+        if (err instanceof AuthRequiredError) {
+          setSession(null);
+          localStorage.removeItem(SESSION_KEY);
+          setSyncError("Sesión expirada. Vuelve a iniciar sesión.");
+          return null;
+        }
+        setSyncError(
+          "Sin red. Las ventas offline se guardarán al reconectar.",
+        );
+        return null;
+      }
+
+      const queue = readOfflineQueue();
+      const replayable = queue.filter(
+        (i) =>
+          i.status === "pending" ||
+          i.status === "conflict" ||
+          i.status === "failed" ||
+          i.status === "syncing",
+      );
+
+      // Base = servidor (stock autoritativo). Reaplicar cola venta a venta.
+      const { store: replayed, queue: nextQueue, report } = replayOfflineQueue(
+        server,
+        replayable.length ? replayable : queue,
+      );
+
+      // Conservar otros cambios locales no-venta (usuarios, settings, etc.)
+      const local = dataRef.current;
+      const queuedIds = new Set(queue.map((q) => q.saleId));
+      const mergedMeta = mergeStores(replayed, {
+        ...local,
+        // no pisar stock/ventas ya resueltos por replay
+        products: replayed.products,
+        sales: replayed.sales,
+      });
+      // Reponer ventas locales que no están en cola ni en servidor (edge)
+      const extraSales = local.sales.filter(
+        (s) =>
+          !queuedIds.has(s.id) &&
+          !mergedMeta.sales.some((x) => x.id === s.id),
+      );
+      let toSave: StoreData = {
+        ...mergedMeta,
+        sales: [...extraSales, ...mergedMeta.sales].sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        ),
+        version: server.version,
+      };
+
+      writeOfflineQueue(nextQueue);
+      refreshQueueState(nextQueue);
+      setLastFlushReport(report);
+
+      if (report.synced > 0 || replayable.length === 0 || nextQueue.length < queue.length) {
+        try {
+          const saved = await saveStore(toSave);
+          const visible = withConflictSalesVisible(saved, nextQueue);
+          setData(visible);
+          dataRef.current = visible;
+          writeLocalStore(visible);
+        } catch (err) {
+          if (err instanceof StoreConflictError) {
+            const again = replayOfflineQueue(err.store, readOfflineQueue());
+            writeOfflineQueue(again.queue);
+            refreshQueueState(again.queue);
+            try {
+              const saved = await saveStore({
+                ...again.store,
+                version: err.store.version,
+              });
+              const visible = withConflictSalesVisible(saved, again.queue);
+              setData(visible);
+              dataRef.current = visible;
+              setLastFlushReport(again.report);
+            } catch {
+              setSyncError(
+                "No se pudo guardar tras conflicto de versión. Reintenta.",
+              );
+              return report;
+            }
+          } else if (err instanceof AuthRequiredError) {
+            setSession(null);
+            localStorage.removeItem(SESSION_KEY);
+            setSyncError("Sesión expirada. Vuelve a iniciar sesión.");
+            return null;
+          } else {
+            setSyncError("No se pudo sincronizar con el servidor.");
+            return report;
+          }
+        }
+      } else {
+        const visible = withConflictSalesVisible(toSave, nextQueue);
+        setData(visible);
+        dataRef.current = visible;
+        writeLocalStore(visible);
+      }
+
+      if (nextQueue.length === 0) {
+        writePendingSync(false);
+        setSyncError(null);
+      } else if (report.conflicts > 0 || report.failed > 0) {
+        setSyncError(
+          `${report.conflicts + report.failed} venta(s) con conflicto de stock. Revisa el detalle abajo.`,
+        );
+      } else {
+        setSyncError(
+          `${report.remaining} venta(s) pendientes de sincronizar.`,
+        );
+      }
+      refreshQueueState(nextQueue);
+      return report;
+    } finally {
+      savingRef.current = false;
+    }
+  }, [refreshQueueState]);
+
+  const retryOfflineSale = useCallback(
+    async (saleId: string) => {
+      const next = resetOfflineSaleForRetry(saleId);
+      refreshQueueState(next);
+      await flushSync();
+    },
+    [flushSync, refreshQueueState],
+  );
+
+  const discardOfflineSale = useCallback(
+    (saleId: string) => {
+      const next = discardOfflineSaleStorage(saleId);
+      // Quitar de historial local si solo estaba por conflicto
+      const filtered = {
+        ...dataRef.current,
+        sales: dataRef.current.sales.filter((s) => s.id !== saleId),
+      };
+      setData(filtered);
+      dataRef.current = filtered;
+      writeLocalStore(filtered);
+      refreshQueueState(next);
+      if (next.length === 0) {
+        writePendingSync(false);
+        setSyncError(null);
+      }
+    },
+    [refreshQueueState],
+  );
+  // Sincroniza al volver online
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !session || !isOnline) return;
+    if (pendingSync || readPendingSync()) {
+      void flushSync();
+    }
+  }, [ready, session, isOnline, pendingSync, flushSync]);
+
+  // Pull periódico (no pisa ventas offline pendientes)
+  useEffect(() => {
+    if (!ready || !session) return;
     async function pull() {
       if (savingRef.current || document.hidden) return;
+      if (!isBrowserOnline()) return;
       try {
         const server = await fetchStore();
         const current = dataRef.current;
-        const serverSig = `${server.sales.length}:${server.products.length}:${server.users.length}:${server.transfers?.length ?? 0}:${server.suppliers?.length ?? 0}:${server.supplierPayments?.length ?? 0}:${server.settings?.logo ?? ""}:${server.settings?.companyName ?? ""}:${server.sales[0]?.id ?? ""}:${server.products[0]?.updatedAt ?? ""}`;
-        const localSig = `${current.sales.length}:${current.products.length}:${current.users.length}:${current.transfers?.length ?? 0}:${current.suppliers?.length ?? 0}:${current.supplierPayments?.length ?? 0}:${current.settings?.logo ?? ""}:${current.settings?.companyName ?? ""}:${current.sales[0]?.id ?? ""}:${current.products[0]?.updatedAt ?? ""}`;
-        if (serverSig !== localSig) {
-          setData(server);
-          setSyncError(null);
+        if (pendingRef.current) {
+          const merged = mergeStores(server, current);
+          merged.version = server.version;
+          setData(merged);
+          dataRef.current = merged;
+          writeLocalStore(merged);
+          return;
         }
-      } catch {
-        // ignore polling errors
+        if ((server.version ?? 0) !== (current.version ?? 0)) {
+          setData(server);
+          dataRef.current = server;
+          setSyncError(null);
+          return;
+        }
+      } catch (err) {
+        if (err instanceof AuthRequiredError) {
+          setSession(null);
+          localStorage.removeItem(SESSION_KEY);
+        }
       }
     }
     const id = window.setInterval(pull, 12_000);
@@ -309,41 +612,91 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("focus", pull);
       document.removeEventListener("visibilitychange", pull);
     };
-  }, [ready]);
-  const persist = useCallback((next: StoreData) => {
-    setData(next);
-    dataRef.current = next;
-    savingRef.current = true;
-    saveStore(next)
-      .then(() => setSyncError(null))
-      .catch(() =>
+  }, [ready, session]);
+
+  const persist = useCallback(
+    (next: StoreData, opts?: { offlineSale?: Sale }) => {
+      setData(next);
+      dataRef.current = next;
+      writeLocalStore(next);
+      savingRef.current = true;
+
+      const offlineNow = !isBrowserOnline();
+      if (offlineNow) {
+        if (opts?.offlineSale) markPending(opts.offlineSale);
+        else markPending();
         setSyncError(
-          "No se pudo sincronizar con el servidor. Revisa la conexión.",
-        ),
-      )
-      .finally(() => {
+          "Sin red: cambios guardados en este dispositivo. Se subirán al reconectar.",
+        );
         savingRef.current = false;
-      });
-  }, []);
+        return;
+      }
+
+      saveStore(next)
+        .then((saved) => {
+          setData(saved);
+          dataRef.current = saved;
+          if (opts?.offlineSale) {
+            // venta online ok: sacar de cola si estaba
+            const q = discardOfflineSaleStorage(opts.offlineSale.id);
+            refreshQueueState(q);
+          } else if (!readOfflineQueue().length) {
+            clearPending();
+          }
+          setSyncError(null);
+        })
+        .catch(async (err) => {
+          if (err instanceof StoreConflictError) {
+            // Reintentar vía flush fino
+            markPending(opts?.offlineSale);
+            savingRef.current = false;
+            await flushSync();
+            return;
+          }
+          if (err instanceof AuthRequiredError) {
+            setSession(null);
+            localStorage.removeItem(SESSION_KEY);
+            setSyncError("Sesión expirada. Vuelve a iniciar sesión.");
+            return;
+          }
+          markPending(opts?.offlineSale);
+          setSyncError(
+            "No se pudo sincronizar. Los cambios siguen en este dispositivo.",
+          );
+        })
+        .finally(() => {
+          savingRef.current = false;
+        });
+    },
+    [clearPending, flushSync, markPending, refreshQueueState],
+  );
   const persistSession = useCallback((next: Session | null) => {
     setSession(next);
     if (next) localStorage.setItem(SESSION_KEY, JSON.stringify(next));
     else localStorage.removeItem(SESSION_KEY);
   }, []);
   const login = useCallback(
-    (username: string, password: string) => {
-      const user = data.users.find(
-        (u) =>
-          u.username.toLowerCase() === username.trim().toLowerCase() &&
-          u.password === password,
-      );
-      if (!user) return "Usuario o contraseña incorrectos.";
-      persistSession(sessionFromUser(user));
-      return null;
+    async (username: string, password: string) => {
+      try {
+        const { session: nextSession, store } = await apiLogin(
+          username,
+          password,
+        );
+        setData(store);
+        dataRef.current = store;
+        persistSession(nextSession);
+        setSyncError(null);
+        return null;
+      } catch (err) {
+        return err instanceof Error
+          ? err.message
+          : "Usuario o contraseña incorrectos.";
+      }
     },
-    [data.users, persistSession],
+    [persistSession],
   );
   const logout = useCallback(() => {
+    void apiLogout();
     persistSession(null);
   }, [persistSession]);
   const setActiveBranch = useCallback(
@@ -356,6 +709,100 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [data.branches, persistSession, session],
   );
+
+  const createBranch = useCallback(
+    (input: { name: string; address: string }) => {
+      if (!session || !hasPermission(session, "sucursales")) {
+        return "No tienes permiso para administrar sucursales.";
+      }
+      const name = input.name.trim();
+      const address = input.address.trim();
+      if (!name) return "El nombre de la sucursal es obligatorio.";
+      if (!address) return "La dirección es obligatoria.";
+      if (
+        data.branches.some(
+          (b) => !b.isWarehouse && b.name.toLowerCase() === name.toLowerCase(),
+        )
+      ) {
+        return "Ya existe una sucursal con ese nombre.";
+      }
+      const branch = {
+        id: uid("suc"),
+        name,
+        address,
+      };
+      persist({ ...data, branches: [...data.branches, branch] });
+      return null;
+    },
+    [data, persist, session],
+  );
+
+  const updateBranch = useCallback(
+    (id: string, input: { name?: string; address?: string }) => {
+      if (!session || !hasPermission(session, "sucursales")) {
+        return "No tienes permiso para administrar sucursales.";
+      }
+      const idx = data.branches.findIndex((b) => b.id === id);
+      if (idx < 0) return "Sucursal no encontrada.";
+      const current = data.branches[idx];
+      if (current.isWarehouse) {
+        return "La Bodega Central no se edita desde aquí.";
+      }
+      const name = input.name?.trim() ?? current.name;
+      const address = input.address?.trim() ?? current.address;
+      if (!name) return "El nombre de la sucursal es obligatorio.";
+      if (!address) return "La dirección es obligatoria.";
+      if (
+        data.branches.some(
+          (b) =>
+            b.id !== id &&
+            !b.isWarehouse &&
+            b.name.toLowerCase() === name.toLowerCase(),
+        )
+      ) {
+        return "Ya existe una sucursal con ese nombre.";
+      }
+      const branches = [...data.branches];
+      branches[idx] = { ...current, name, address };
+      persist({ ...data, branches });
+      return null;
+    },
+    [data, persist, session],
+  );
+
+  const deleteBranch = useCallback(
+    (id: string) => {
+      if (!session || !hasPermission(session, "sucursales")) {
+        return "No tienes permiso para administrar sucursales.";
+      }
+      const target = data.branches.find((b) => b.id === id);
+      if (!target) return "Sucursal no encontrada.";
+      if (target.isWarehouse) return "No se puede eliminar la Bodega Central.";
+      const stores = data.branches.filter((b) => !b.isWarehouse);
+      if (stores.length <= 1) {
+        return "Debe quedar al menos una sucursal de venta.";
+      }
+      if (data.products.some((p) => p.branchId === id && p.quantity > 0)) {
+        return "Trasladá o vaciá el inventario antes de eliminar la sucursal.";
+      }
+      if (data.users.some((u) => u.branchId === id)) {
+        return "Hay usuarios con esta sucursal como principal. Reasignalos primero.";
+      }
+      if (session.branchId === id) {
+        return "Cambia a otra sucursal activa antes de eliminarla.";
+      }
+      const branches = data.branches.filter((b) => b.id !== id);
+      const products = data.products.filter((p) => p.branchId !== id);
+      const users = data.users.map((u) => ({
+        ...u,
+        allowedBranchIds: (u.allowedBranchIds ?? []).filter((bid) => bid !== id),
+      }));
+      persist({ ...data, branches, products, users });
+      return null;
+    },
+    [data, persist, session],
+  );
+
   const addProduct = useCallback(
     (input: {
       name: string;
@@ -367,6 +814,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       branchId?: string;
     }) => {
       if (!session) return "Sesión no válida.";
+      if (!hasPermission(session, "inventario")) {
+        return "No tienes permiso para gestionar inventario.";
+      }
       const name = input.name.trim();
       const barcode = input.barcode?.trim() || undefined;
       if (!name) return "El nombre es obligatorio.";
@@ -415,6 +865,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         image?: string;
       },
     ) => {
+      if (!session || !hasPermission(session, "inventario")) {
+        return "No tienes permiso para gestionar inventario.";
+      }
       const name = input.name.trim();
       const barcode = input.barcode?.trim() || undefined;
       if (!name) return "El nombre es obligatorio.";
@@ -457,16 +910,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       return null;
     },
-    [data, persist],
+    [data, persist, session],
   );
   const deleteProduct = useCallback(
     (id: string) => {
+      if (!session || !hasPermission(session, "inventario")) return;
       persist({
         ...data,
         products: data.products.filter((p) => p.id !== id),
       });
     },
-    [data, persist],
+    [data, persist, session],
   );
   const createUser = useCallback(
     (input: {
@@ -485,6 +939,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const username = input.username.trim().toLowerCase();
       if (!name || !username || !input.password) {
         return "Completa todos los campos.";
+      }
+      if (input.password.trim().length < 8) {
+        return "La contraseña debe tener al menos 8 caracteres.";
       }
       if (data.users.some((u) => u.username.toLowerCase() === username)) {
         return "Ese usuario ya existe.";
@@ -585,6 +1042,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ) {
         return "La sucursal principal debe estar entre las tiendas visibles.";
       }
+      if (
+        input.password &&
+        input.password.trim() &&
+        input.password.trim().length < 8
+      ) {
+        return "La contraseña debe tener al menos 8 caracteres.";
+      }
       const next = normalizeUser({
         ...current,
         name: input.name?.trim() || current.name,
@@ -641,50 +1105,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const checkout = useCallback(
     (items: SaleItem[]) => {
-      if (!session) return { error: "Sesión no válida." };
-      if (!items.length) return { error: "Agrega productos al carrito." };
-      const branch = data.branches.find((b) => b.id === session.branchId);
-      if (branch?.isWarehouse) {
-        return {
-          error:
-            "No se puede vender desde la Bodega Central. Cambia a una sucursal.",
-        };
+      const result = applyCheckout(data, session, items);
+      if (result.error || !result.store || !result.sale) {
+        return { error: result.error ?? "No se pudo cobrar." };
       }
-      const products = [...data.products];
-      for (const item of items) {
-        const idx = products.findIndex((p) => p.id === item.productId);
-        if (idx < 0) return { error: `Producto no encontrado: ${item.name}` };
-        if (products[idx].branchId !== session.branchId) {
-          return { error: "Hay productos de otra sucursal." };
-        }
-        if (products[idx].quantity < item.quantity) {
-          return { error: `Stock insuficiente de ${item.name}.` };
-        }
-        products[idx] = {
-          ...products[idx],
-          quantity: products[idx].quantity - item.quantity,
-          updatedAt: new Date().toISOString(),
-        };
-      }
-      const total = items.reduce(
-        (sum, item) => sum + item.price * item.quantity,
-        0,
-      );
-      const sale: Sale = {
-        id: uid("sale"),
-        branchId: session.branchId,
-        userId: session.userId,
-        userName: session.name,
-        items,
-        total,
-        createdAt: new Date().toISOString(),
-      };
-      persist({
-        ...data,
-        products,
-        sales: [sale, ...data.sales],
+      const offline = !isBrowserOnline();
+      persist(result.store, {
+        offlineSale: result.sale,
       });
-      return { error: null, sale };
+      return { error: null, sale: result.sale, offline };
     },
     [data, persist, session],
   );
@@ -866,6 +1295,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ) => {
       if (!session) {
         return { error: "Sesión no válida.", created: 0, updated: 0 };
+      }
+      if (!hasPermission(session, "inventario")) {
+        return {
+          error: "No tienes permiso para gestionar inventario.",
+          created: 0,
+          updated: 0,
+        };
       }
       if (!rows.length) {
         return {
@@ -1178,11 +1614,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       ready,
       syncError,
+      isOnline,
+      pendingSync,
+      pendingOfflineCount,
+      offlineConflicts,
+      lastFlushReport,
+      flushSync,
+      retryOfflineSale,
+      discardOfflineSale,
       session,
       data,
       login,
       logout,
       setActiveBranch,
+      createBranch,
+      updateBranch,
+      deleteBranch,
       addProduct,
       updateProduct,
       deleteProduct,
@@ -1207,11 +1654,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       ready,
       syncError,
+      isOnline,
+      pendingSync,
+      pendingOfflineCount,
+      offlineConflicts,
+      lastFlushReport,
+      flushSync,
+      retryOfflineSale,
+      discardOfflineSale,
       session,
       data,
       login,
       logout,
       setActiveBranch,
+      createBranch,
+      updateBranch,
+      deleteBranch,
       addProduct,
       updateProduct,
       deleteProduct,

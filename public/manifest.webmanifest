@@ -1,16 +1,18 @@
 {
+  "id": "/",
   "name": "MI BARRIO",
   "short_name": "MI BARRIO",
   "description": "Inventario, POS y sucursales para MI BARRIO",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
-  "theme_color": "#171a21",
-  "background_color": "#f4f6f9",
-  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "theme_color": "#0b2545",
+  "background_color": "#0b2545",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "lang": "es-GT",
-  "categories": ["business", "productivity"],
+  "dir": "ltr",
+  "categories": ["business", "productivity", "finance"],
   "prefer_related_applications": false,
   "icons": [
     {
@@ -26,10 +28,24 @@
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "/icons/icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "POS",
+      "short_name": "POS",
+      "url": "/app/pos",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Inventario",
+      "short_name": "Inventario",
+      "url": "/app/inventario",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

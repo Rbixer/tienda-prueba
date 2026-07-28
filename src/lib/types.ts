@@ -161,6 +161,8 @@ export type Session = {
 };
 
 export type StoreData = {
+  /** Versión para control de concurrencia (optimistic locking). */
+  version: number;
   branches: Branch[];
   users: User[];
   products: Product[];

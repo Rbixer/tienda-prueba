@@ -360,7 +360,7 @@ export default function InventarioPage() {
             <button
               type="button"
               onClick={openCreate}
-              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-md bg-[var(--brand)] px-3 text-sm font-semibold text-white transition hover:bg-[var(--brand-dark)] sm:px-4"
+              className="hidden min-h-11 min-w-11 items-center justify-center gap-2 rounded-md bg-[var(--brand)] px-4 text-sm font-semibold text-white transition hover:bg-[var(--brand-dark)] lg:inline-flex"
               aria-label="Agregar producto"
               title="Agregar producto"
             >
@@ -386,7 +386,7 @@ export default function InventarioPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto md:hidden">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-24 lg:hidden">
           {filtered.map((product) => (
             <div
               key={product.id}
@@ -464,8 +464,8 @@ export default function InventarioPage() {
             </p>
           ) : null}
         </div>
-        <div className="hidden min-h-0 flex-1 overflow-auto md:block">
-          <table className="w-full min-w-[560px] text-left text-sm">
+        <div className="hidden min-h-0 flex-1 overflow-auto lg:block">
+          <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-[var(--line)] text-xs uppercase tracking-wide text-[var(--muted)]">
                 <th className="pb-2 font-medium">Producto</th>
@@ -559,18 +559,20 @@ export default function InventarioPage() {
           </table>
         </div>
       </Panel>
-      <button
-        type="button"
-        onClick={openCreate}
-        className="fixed z-40 flex h-14 w-14 items-center justify-center rounded-md bg-[var(--brand)] text-white  transition hover:bg-[var(--brand-dark)] md:hidden"
-        style={{
-          right: "max(1rem, env(safe-area-inset-right))",
-          bottom: "calc(4.5rem + env(safe-area-inset-bottom))",
-        }}
-        aria-label="Agregar producto"
-      >
-        <Plus size={26} strokeWidth={2.5} />
-      </button>
+      {!open ? (
+        <button
+          type="button"
+          onClick={openCreate}
+          className="fixed z-40 flex h-14 w-14 items-center justify-center rounded-md bg-[var(--brand)] text-white transition hover:bg-[var(--brand-dark)] lg:hidden"
+          style={{
+            right: "max(1rem, env(safe-area-inset-right))",
+            bottom: "calc(4.5rem + env(safe-area-inset-bottom))",
+          }}
+          aria-label="Agregar producto"
+        >
+          <Plus size={26} strokeWidth={2.5} />
+        </button>
+      ) : null}
       {open ? (
         <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:p-4">
           <button
@@ -583,7 +585,7 @@ export default function InventarioPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="producto-modal-title"
-            className="relative z-10 max-h-[92dvh] w-full max-w-md overflow-y-auto animate-[fadeUp_0.25s_ease] border border-[var(--line)] bg-[var(--surface)] p-4 sm:p-5"
+            className="relative z-10 max-h-[92dvh] w-full max-w-md overflow-y-auto animate-[fadeUp_0.25s_ease] border border-[var(--line)] bg-[var(--surface)] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-2xl sm:p-5"
           >
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>

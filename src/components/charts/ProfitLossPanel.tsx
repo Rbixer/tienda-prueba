@@ -163,7 +163,7 @@ function Metric({
         <span className="truncate">{label}</span>
       </p>
       <p
-        className={`mt-1 truncate font-[family-name:var(--font-display)] text-base font-bold ${valueClass}`}
+        className={`mt-1 break-words font-[family-name:var(--font-display)] text-[clamp(0.9rem,3.8vw,1rem)] font-bold leading-tight ${valueClass}`}
       >
         {value}
       </p>

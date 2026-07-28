@@ -428,8 +428,8 @@ export default function ProveedoresPage() {
       subtitle="Registra proveedores y controla los pagos pendientes."
     >
       <GuardAdmin>
-        <div className="flex min-h-0 flex-1 flex-col gap-3">
-          <div className="grid shrink-0 gap-3 sm:grid-cols-3">
+        <div className="flex w-full min-w-0 flex-col gap-3 pb-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             <KpiCard
               featured
               label="Proveedores"
@@ -453,15 +453,15 @@ export default function ProveedoresPage() {
             />
           </div>
 
-          <div className="grid min-h-0 flex-1 items-start gap-3 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)_minmax(0,22rem)]">
+          <div className="grid w-full min-w-0 items-start gap-3 xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,20rem)]">
             {/* Formulario */}
-            <Panel className="h-fit !p-4">
+            <Panel className="!p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--brand-soft)] text-[var(--brand)]">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--brand-soft)] text-[var(--brand)]">
                     {editing ? <Pencil size={16} /> : <Plus size={16} />}
                   </span>
-                  <h2 className="font-[family-name:var(--font-display)] text-base font-semibold">
+                  <h2 className="truncate font-[family-name:var(--font-display)] text-base font-semibold">
                     {editing ? "Editar proveedor" : "Nuevo proveedor"}
                   </h2>
                 </div>
@@ -488,7 +488,7 @@ export default function ProveedoresPage() {
                     placeholder="Ej. Distribuidora del Sur"
                   />
                 </Field>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <Field label="Teléfono">
                     <input
                       className={inputClass}
@@ -555,8 +555,8 @@ export default function ProveedoresPage() {
             </Panel>
 
             {/* Listado */}
-            <Panel className="flex min-h-0 flex-col !p-0">
-              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--line)] px-4 py-3">
+            <Panel className="!p-0">
+              <div className="flex items-center justify-between gap-2 border-b border-[var(--line)] px-4 py-3">
                 <div className="flex items-center gap-2">
                   <Truck size={16} className="text-[var(--navy)]" />
                   <h2 className="font-[family-name:var(--font-display)] text-base font-semibold">
@@ -567,212 +567,193 @@ export default function ProveedoresPage() {
                   {suppliers.length}
                 </span>
               </div>
-              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+              <ul className="max-h-[min(28rem,55dvh)] space-y-2 overflow-y-auto p-3 xl:max-h-[min(36rem,62dvh)]">
                 {suppliers.map((s) => {
                   const active = selectedId === s.id;
                   return (
                     <li key={s.id}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedId(s.id)}
-                        className={`flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition ${
+                      <div
+                        className={`flex w-full items-start gap-3 rounded-xl border px-3 py-3 transition ${
                           active
                             ? "border-[var(--navy)]/30 bg-[var(--slate-soft)] shadow-sm"
                             : "border-[var(--line)] bg-white hover:border-[var(--navy)]/20"
                         }`}
                       >
-                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--navy)] text-sm font-bold text-white">
-                          {s.name[0]?.toUpperCase() ?? "P"}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-semibold text-[var(--ink)]">
-                            {s.name}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(s.id)}
+                          className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                        >
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--navy)] text-sm font-bold text-white">
+                            {s.name[0]?.toUpperCase() ?? "P"}
                           </span>
-                          <span className="mt-0.5 flex items-center gap-1 text-[11px] text-[var(--muted)]">
-                            {s.phone ? (
-                              <>
-                                <Phone size={11} />
-                                {s.phone}
-                              </>
-                            ) : (
-                              "Sin teléfono"
-                            )}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-semibold text-[var(--ink)]">
+                              {s.name}
+                            </span>
+                            <span className="mt-0.5 flex items-center gap-1 text-[11px] text-[var(--muted)]">
+                              {s.phone ? (
+                                <>
+                                  <Phone size={11} />
+                                  {s.phone}
+                                </>
+                              ) : (
+                                "Sin teléfono"
+                              )}
+                            </span>
+                            <span
+                              className={`mt-1.5 inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                                s.balance > 0
+                                  ? "bg-[var(--amber-soft)] text-[var(--amber)]"
+                                  : "bg-[var(--teal-soft)] text-[var(--teal)]"
+                              }`}
+                            >
+                              {s.balance > 0
+                                ? `Debe ${formatMoney(s.balance)}`
+                                : "Al día"}
+                            </span>
                           </span>
-                          <span
-                            className={`mt-1.5 inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                              s.balance > 0
-                                ? "bg-[var(--amber-soft)] text-[var(--amber)]"
-                                : "bg-[var(--teal-soft)] text-[var(--teal)]"
-                            }`}
-                          >
-                            {s.balance > 0
-                              ? `Debe ${formatMoney(s.balance)}`
-                              : "Al día"}
-                          </span>
-                        </span>
-                        <span className="flex shrink-0 flex-col gap-1">
-                          <span
-                            role="button"
-                            tabIndex={0}
+                        </button>
+                        <div className="flex shrink-0 flex-col gap-1">
+                          <button
+                            type="button"
                             className="rounded-lg p-1.5 text-[var(--muted)] hover:bg-white hover:text-[var(--navy)]"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEdit(s);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.stopPropagation();
-                                openEdit(s);
-                              }
-                            }}
+                            onClick={() => openEdit(s)}
                             title="Editar"
                           >
                             <Pencil size={14} />
-                          </span>
-                          <span
-                            role="button"
-                            tabIndex={0}
+                          </button>
+                          <button
+                            type="button"
                             className="rounded-lg p-1.5 text-[var(--muted)] hover:bg-red-50 hover:text-red-600"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void askDelete(s);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.stopPropagation();
-                                void askDelete(s);
-                              }
-                            }}
+                            onClick={() => void askDelete(s)}
                             title="Eliminar"
                           >
                             <Trash2 size={14} />
-                          </span>
-                        </span>
-                      </button>
+                          </button>
+                        </div>
+                      </div>
                     </li>
                   );
                 })}
                 {suppliers.length === 0 ? (
                   <li className="px-4 py-12 text-center text-sm text-[var(--muted)]">
-                    Aún no hay proveedores. Registra el primero a la izquierda.
+                    Aún no hay proveedores. Registra el primero arriba.
                   </li>
                 ) : null}
               </ul>
             </Panel>
 
             {/* Pagos */}
-            <aside className="flex min-h-0 w-full flex-col gap-3 self-start lg:sticky lg:top-3 lg:max-h-[calc(100dvh-5.5rem)]">
-              <Panel className="flex max-h-[inherit] min-h-0 flex-col overflow-hidden !p-4">
-                <div className="mb-3 flex shrink-0 items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--teal-soft)] text-[var(--teal)]">
-                    <Wallet size={16} />
-                  </span>
-                  <div className="min-w-0">
-                    <h2 className="font-[family-name:var(--font-display)] text-base font-semibold">
-                      Pagos
-                    </h2>
-                    <p className="truncate text-[11px] text-[var(--muted)]">
-                      {selected
-                        ? selected.name
-                        : "Selecciona un proveedor"}
+            <Panel className="!p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--teal-soft)] text-[var(--teal)]">
+                  <Wallet size={16} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="font-[family-name:var(--font-display)] text-base font-semibold">
+                    Pagos
+                  </h2>
+                  <p className="truncate text-[11px] text-[var(--muted)]">
+                    {selected ? selected.name : "Selecciona un proveedor"}
+                  </p>
+                </div>
+              </div>
+
+              {selected ? (
+                <>
+                  <div className="mb-3 rounded-xl bg-[var(--bg-soft)] px-3 py-2.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                      Saldo actual
+                    </p>
+                    <p className="mt-0.5 break-all text-lg font-bold text-[var(--ink)]">
+                      {formatMoney(selected.balance)}
                     </p>
                   </div>
-                </div>
 
-                {selected ? (
-                  <>
-                    <div className="mb-3 shrink-0 rounded-xl bg-[var(--bg-soft)] px-3 py-2.5">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
-                        Saldo actual
-                      </p>
-                      <p className="mt-0.5 text-lg font-bold text-[var(--ink)]">
-                        {formatMoney(selected.balance)}
-                      </p>
-                    </div>
-
-                    <form
-                      onSubmit={onPay}
-                      className="mb-3 shrink-0 space-y-2 border-b border-[var(--line)] pb-3"
-                    >
-                      <Field label="Monto a pagar">
-                        <input
-                          type="number"
-                          min={0.01}
-                          step="0.01"
-                          className={inputClass}
-                          value={payAmount}
-                          onChange={(e) => setPayAmount(e.target.value)}
-                          required
-                          placeholder="0.00"
-                        />
-                      </Field>
-                      <Field label="Método">
-                        <select
-                          className={inputClass}
-                          value={payMethod}
-                          onChange={(e) =>
-                            setPayMethod(e.target.value as SupplierPaymentMethod)
-                          }
-                        >
-                          {METHODS.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.label}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Nota">
-                        <input
-                          className={inputClass}
-                          value={payNote}
-                          onChange={(e) => setPayNote(e.target.value)}
-                          placeholder="Opcional"
-                        />
-                      </Field>
-                      <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--bg)] px-3 py-2.5 text-sm">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-[var(--teal)]"
-                          checked={printTicket}
-                          onChange={(e) => setPrintTicket(e.target.checked)}
-                        />
-                        <Printer size={15} className="shrink-0 text-[var(--muted)]" />
-                        <span>Imprimir ticket al registrar</span>
-                      </label>
-                      <button
-                        type="submit"
-                        className={`${buttonPrimary} w-full`}
-                        disabled={Boolean(pdfBusy)}
+                  <form
+                    onSubmit={onPay}
+                    className="mb-3 space-y-2 border-b border-[var(--line)] pb-3"
+                  >
+                    <Field label="Monto a pagar">
+                      <input
+                        type="number"
+                        min={0.01}
+                        step="0.01"
+                        className={inputClass}
+                        value={payAmount}
+                        onChange={(e) => setPayAmount(e.target.value)}
+                        required
+                        placeholder="0.00"
+                      />
+                    </Field>
+                    <Field label="Método">
+                      <select
+                        className={inputClass}
+                        value={payMethod}
+                        onChange={(e) =>
+                          setPayMethod(e.target.value as SupplierPaymentMethod)
+                        }
                       >
-                        <Banknote size={16} />
-                        {printTicket ? "Registrar e imprimir" : "Registrar pago"}
-                      </button>
-                    </form>
+                        {METHODS.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Nota">
+                      <input
+                        className={inputClass}
+                        value={payNote}
+                        onChange={(e) => setPayNote(e.target.value)}
+                        placeholder="Opcional"
+                      />
+                    </Field>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--bg)] px-3 py-2.5 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-[var(--teal)]"
+                        checked={printTicket}
+                        onChange={(e) => setPrintTicket(e.target.checked)}
+                      />
+                      <Printer size={15} className="shrink-0 text-[var(--muted)]" />
+                      <span>Imprimir ticket al registrar</span>
+                    </label>
+                    <button
+                      type="submit"
+                      className={`${buttonPrimary} w-full`}
+                      disabled={Boolean(pdfBusy)}
+                    >
+                      <Banknote size={16} />
+                      {printTicket ? "Registrar e imprimir" : "Registrar pago"}
+                    </button>
+                  </form>
 
-                    <div className="min-h-0 flex-1 overflow-y-auto">
-                      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
-                        Historial
-                      </p>
-                      <ul className="space-y-2">
-                        {selectedPayments.map((p) => (
-                          <li
-                            key={p.id}
-                            className="flex items-start gap-2 rounded-xl border border-[var(--line)] bg-white px-2.5 py-2"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <p className="font-semibold text-[var(--teal)]">
-                                {formatMoney(p.amount)}
-                              </p>
-                              <p className="text-[11px] text-[var(--muted)]">
-                                {METHODS.find((m) => m.id === p.method)?.label}{" "}
-                                · {formatDate(p.paidAt)}
-                              </p>
-                              <p className="truncate text-[11px] text-[var(--muted)]">
-                                {p.userName}
-                                {p.note ? ` · ${p.note}` : ""}
-                              </p>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-0.5">
+                  <div>
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                      Historial
+                    </p>
+                    <ul className="max-h-64 space-y-2 overflow-y-auto">
+                      {selectedPayments.map((p) => (
+                        <li
+                          key={p.id}
+                          className="flex items-start gap-2 rounded-xl border border-[var(--line)] bg-white px-2.5 py-2"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-[var(--teal)]">
+                              {formatMoney(p.amount)}
+                            </p>
+                            <p className="text-[11px] text-[var(--muted)]">
+                              {METHODS.find((m) => m.id === p.method)?.label} ·{" "}
+                              {formatDate(p.paidAt)}
+                            </p>
+                            <p className="truncate text-[11px] text-[var(--muted)]">
+                              {p.userName}
+                              {p.note ? ` · ${p.note}` : ""}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-0.5">
                             <button
                               type="button"
                               className="rounded-lg p-1.5 text-[var(--muted)] hover:bg-[var(--slate-soft)] hover:text-[var(--navy)] disabled:opacity-50"
@@ -803,35 +784,34 @@ export default function ProveedoresPage() {
                             >
                               <Trash2 size={14} />
                             </button>
-                            </div>
-                          </li>
-                        ))}
-                        {selectedPayments.length === 0 ? (
-                          <li className="py-6 text-center text-xs text-[var(--muted)]">
-                            Sin pagos registrados
-                          </li>
-                        ) : null}
-                      </ul>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex flex-1 flex-col items-center justify-center gap-2 py-10 text-center text-sm text-[var(--muted)]">
-                    <Wallet size={28} className="opacity-40" />
-                    Elige un proveedor para ver y registrar pagos
+                          </div>
+                        </li>
+                      ))}
+                      {selectedPayments.length === 0 ? (
+                        <li className="py-6 text-center text-xs text-[var(--muted)]">
+                          Sin pagos registrados
+                        </li>
+                      ) : null}
+                    </ul>
                   </div>
-                )}
-              </Panel>
-            </aside>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-sm text-[var(--muted)]">
+                  <Wallet size={28} className="opacity-40" />
+                  Elige un proveedor para ver y registrar pagos
+                </div>
+              )}
+            </Panel>
           </div>
 
           {/* Historial general de pagos */}
-          <Panel className="shrink-0 !p-0">
+          <Panel className="!p-0">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--slate-soft)] text-[var(--navy)]">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--slate-soft)] text-[var(--navy)]">
                   <History size={16} />
                 </span>
-                <div>
+                <div className="min-w-0">
                   <h2 className="font-[family-name:var(--font-display)] text-base font-semibold leading-tight">
                     Historial de pagos registrados
                   </h2>
@@ -850,8 +830,7 @@ export default function ProveedoresPage() {
             </div>
 
             <div className="max-h-[22rem] overflow-y-auto">
-              {/* Móvil: cards */}
-              <ul className="space-y-2 p-3 md:hidden">
+              <ul className="space-y-2 p-3 lg:hidden">
                 {allPayments.map((p) => {
                   const supplier = supplierById.get(p.supplierId);
                   return (
@@ -901,9 +880,8 @@ export default function ProveedoresPage() {
                 ) : null}
               </ul>
 
-              {/* Desktop: tabla */}
-              <div className="hidden overflow-x-auto md:block">
-                <table className="w-full min-w-[640px] text-left text-sm">
+              <div className="hidden overflow-x-auto lg:block">
+                <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-[var(--line)] text-[11px] uppercase tracking-wide text-[var(--muted)]">
                       <th className="px-4 py-2.5 font-semibold">Fecha</th>
@@ -926,10 +904,10 @@ export default function ProveedoresPage() {
                           key={p.id}
                           className="border-b border-[var(--line)]/70 last:border-0"
                         >
-                          <td className="px-4 py-2.5 text-[var(--muted)]">
+                          <td className="whitespace-nowrap px-4 py-2.5 text-[var(--muted)]">
                             {formatDate(p.paidAt)}
                           </td>
-                          <td className="px-4 py-2.5 font-medium">
+                          <td className="max-w-[12rem] truncate px-4 py-2.5 font-medium">
                             {supplier?.name ?? "—"}
                           </td>
                           <td className="px-4 py-2.5 capitalize text-[var(--muted)]">

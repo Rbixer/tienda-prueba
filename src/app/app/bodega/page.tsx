@@ -182,9 +182,9 @@ export default function BodegaPage() {
       subtitle="Arma el traslado: elige productos, cantidad y confirma."
     >
       <GuardAdmin>
-        <div className="flex min-h-0 flex-1 flex-col gap-3">
+        <div className="flex w-full min-w-0 shrink-0 flex-col gap-3 pb-3">
           {/* Ruta origen → destino */}
-          <Panel className="shrink-0 !p-3 sm:!p-4">
+          <Panel className="!p-3 sm:!p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-stretch">
                 <label className="min-w-0 flex-1 space-y-1">
@@ -265,12 +265,12 @@ export default function BodegaPage() {
               </div>
             </div>
 
-            <div className="mt-3 flex items-center gap-2 rounded-xl bg-[var(--navy)] px-3 py-2.5 text-sm text-white">
-              <span className="truncate font-semibold">
+            <div className="mt-3 flex min-w-0 items-center gap-2 rounded-xl bg-[var(--navy)] px-3 py-2.5 text-sm text-white">
+              <span className="min-w-0 flex-1 truncate font-semibold">
                 {fromBranch?.name ?? "Origen"}
               </span>
               <ArrowRight size={16} className="shrink-0 opacity-70" />
-              <span className="truncate font-semibold">
+              <span className="min-w-0 flex-1 truncate font-semibold">
                 {toBranch?.name ?? "Destino"}
               </span>
               {cartSkus > 0 ? (
@@ -281,11 +281,15 @@ export default function BodegaPage() {
             </div>
           </Panel>
 
-          {/* Catálogo + carrito */}
-          <div className="grid min-h-0 flex-1 items-start gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.75fr)]">
-            <Panel className="flex min-h-0 w-full flex-col !p-3 sm:!p-4">
+          {/*
+            Móvil: stack estricto (productos → traslado → historial).
+            Desktop: 2 columnas.
+          */}
+          <div className="flex w-full min-w-0 flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.75fr)] lg:items-start">
+            {/* 1) Productos */}
+            <section className="card relative z-0 order-1 w-full min-w-0 overflow-hidden p-3 sm:p-4 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-hidden lg:flex lg:flex-col">
               <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
-                <div>
+                <div className="min-w-0">
                   <h2 className="font-[family-name:var(--font-display)] text-base font-semibold sm:text-lg">
                     Productos en origen
                   </h2>
@@ -311,7 +315,7 @@ export default function BodegaPage() {
                 />
               </div>
 
-              <div className="min-h-0 flex-1 overflow-auto">
+              <div className="max-h-[min(48dvh,26rem)] space-y-0 overflow-y-auto overscroll-y-contain lg:max-h-none lg:min-h-0 lg:flex-1">
                 {fromProducts.length === 0 ? (
                   <div className="flex flex-col items-center gap-2 px-4 py-14 text-center text-sm text-[var(--muted)]">
                     <Package size={32} className="opacity-35" />
@@ -355,7 +359,7 @@ export default function BodegaPage() {
                           {inCart === 0 ? (
                             <button
                               type="button"
-                              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[var(--brand-dark)] disabled:opacity-40"
+                              className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[var(--brand-dark)] disabled:opacity-40"
                               disabled={remaining <= 0}
                               onClick={() => addOne(p)}
                             >
@@ -366,7 +370,7 @@ export default function BodegaPage() {
                             <div className="mt-3 flex items-center gap-2">
                               <button
                                 type="button"
-                                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--bg-soft)] text-[var(--ink)]"
+                                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--bg-soft)] text-[var(--ink)]"
                                 onClick={() => setQty(p, inCart - 1)}
                                 aria-label="Quitar uno"
                               >
@@ -376,7 +380,7 @@ export default function BodegaPage() {
                                 type="number"
                                 min={0}
                                 max={p.quantity}
-                                className={`${inputClass} h-10 flex-1 py-0 text-center font-semibold`}
+                                className={`${inputClass} h-11 flex-1 py-0 text-center font-semibold`}
                                 value={inCart}
                                 onChange={(e) =>
                                   setQty(p, Number(e.target.value) || 0)
@@ -384,7 +388,7 @@ export default function BodegaPage() {
                               />
                               <button
                                 type="button"
-                                className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--brand)] text-white disabled:opacity-40"
+                                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-[var(--brand)] text-white disabled:opacity-40"
                                 disabled={inCart >= p.quantity}
                                 onClick={() => setQty(p, inCart + 1)}
                                 aria-label="Agregar uno"
@@ -399,119 +403,121 @@ export default function BodegaPage() {
                   </ul>
                 )}
               </div>
-            </Panel>
+            </section>
 
-            {/* Carrito de traslado — fijo al hacer scroll */}
-            <aside className="w-full self-start lg:sticky lg:top-3 lg:z-20 lg:max-h-[calc(100dvh-5.5rem)]">
-              <Panel className="flex max-h-[inherit] min-h-0 flex-col overflow-hidden !p-3 sm:!p-4">
-                <div className="mb-3 flex shrink-0 items-center justify-between">
-                  <div>
-                    <h2 className="font-[family-name:var(--font-display)] text-base font-semibold sm:text-lg">
-                      Traslado
-                    </h2>
-                    <p className="text-xs text-[var(--muted)]">
-                      {cartSkus === 0
-                        ? "Vacío — agrega productos"
-                        : `${cartSkus} producto(s) · ${cartUnits} und.`}
-                    </p>
-                  </div>
-                  {cartSkus > 0 ? (
-                    <button
-                      type="button"
-                      className="rounded-lg p-2 text-[var(--muted)] hover:bg-red-50 hover:text-red-600"
-                      title="Vaciar"
-                      onClick={clearCart}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  ) : null}
+            {/* 2) Traslado — debajo en móvil (sin sticky/z-index) */}
+            <section className="card relative z-0 order-2 w-full min-w-0 overflow-hidden p-3 sm:p-4 lg:sticky lg:top-3 lg:z-10 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-hidden lg:flex lg:flex-col">
+              <div className="mb-3 flex shrink-0 items-center justify-between">
+                <div className="min-w-0">
+                  <h2 className="font-[family-name:var(--font-display)] text-base font-semibold sm:text-lg">
+                    Traslado
+                  </h2>
+                  <p className="text-xs text-[var(--muted)]">
+                    {cartSkus === 0
+                      ? "Vacío — agrega productos de arriba"
+                      : `${cartSkus} producto(s) · ${cartUnits} und.`}
+                  </p>
                 </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  {cartLines.length === 0 ? (
-                    <div className="flex h-full min-h-[8rem] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--line)] bg-[var(--bg-soft)] px-4 text-center text-sm text-[var(--muted)]">
-                      <ArrowRight size={22} className="opacity-40" />
-                      Selecciona productos a la izquierda
-                    </div>
-                  ) : (
-                    <ul className="space-y-2">
-                      {cartLines.map(({ product, quantity }) => (
-                        <li
-                          key={product.id}
-                          className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--bg-soft)] p-2"
-                        >
-                          <ProductThumb
-                            src={product.image}
-                            alt={product.name}
-                            size="sm"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold">
-                              {product.name}
-                            </p>
-                            <p className="text-[11px] text-[var(--muted)]">
-                              Máx. {product.quantity}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--line)] bg-white"
-                              onClick={() => setQty(product, quantity - 1)}
-                            >
-                              <Minus size={14} />
-                            </button>
-                            <span className="w-7 text-center text-sm font-bold">
-                              {quantity}
-                            </span>
-                            <button
-                              type="button"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[var(--brand)] text-white disabled:opacity-40"
-                              disabled={quantity >= product.quantity}
-                              onClick={() => setQty(product, quantity + 1)}
-                            >
-                              <Plus size={14} />
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                <div className="mt-3 shrink-0 space-y-2 border-t border-[var(--line)] pt-3">
-                  <input
-                    className={inputClass}
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="Nota (opcional)"
-                  />
-                  {error ? (
-                    <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
-                      {error}
-                    </p>
-                  ) : null}
-                  {ok ? (
-                    <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                      {ok}
-                    </p>
-                  ) : null}
+                {cartSkus > 0 ? (
                   <button
                     type="button"
-                    className={`${buttonPrimary} w-full min-h-11`}
-                    disabled={cartSkus === 0}
-                    onClick={confirmTransfer}
+                    className="rounded-lg p-2 text-[var(--muted)] hover:bg-red-50 hover:text-red-600"
+                    title="Vaciar"
+                    onClick={clearCart}
                   >
-                    <Check size={18} />
-                    Confirmar traslado
+                    <Trash2 size={16} />
                   </button>
-                </div>
-              </Panel>
-            </aside>
+                ) : null}
+              </div>
+
+              <div className="max-h-52 overflow-y-auto overscroll-y-contain lg:max-h-none lg:min-h-0 lg:flex-1">
+                {cartLines.length === 0 ? (
+                  <div className="flex min-h-[6.5rem] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--line)] bg-[var(--bg-soft)] px-4 text-center text-sm text-[var(--muted)]">
+                    <ArrowRight size={22} className="opacity-40" />
+                    Selecciona productos{" "}
+                    <span className="lg:hidden">arriba</span>
+                    <span className="hidden lg:inline">a la izquierda</span>
+                  </div>
+                ) : (
+                  <ul className="space-y-2">
+                    {cartLines.map(({ product, quantity }) => (
+                      <li
+                        key={product.id}
+                        className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--bg-soft)] p-2"
+                      >
+                        <ProductThumb
+                          src={product.image}
+                          alt={product.name}
+                          size="sm"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">
+                            {product.name}
+                          </p>
+                          <p className="text-[11px] text-[var(--muted)]">
+                            Máx. {product.quantity}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-[var(--line)] bg-white"
+                            onClick={() => setQty(product, quantity - 1)}
+                            aria-label="Restar"
+                          >
+                            <Minus size={16} />
+                          </button>
+                          <span className="w-8 text-center text-sm font-bold tabular-nums">
+                            {quantity}
+                          </span>
+                          <button
+                            type="button"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md bg-[var(--brand)] text-white disabled:opacity-40"
+                            disabled={quantity >= product.quantity}
+                            onClick={() => setQty(product, quantity + 1)}
+                            aria-label="Sumar"
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="mt-3 shrink-0 space-y-2 border-t border-[var(--line)] pt-3">
+                <input
+                  className={inputClass}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Nota (opcional)"
+                />
+                {error ? (
+                  <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {error}
+                  </p>
+                ) : null}
+                {ok ? (
+                  <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    {ok}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  className={`${buttonPrimary} w-full`}
+                  disabled={cartSkus === 0}
+                  onClick={confirmTransfer}
+                >
+                  <Check size={18} />
+                  Confirmar traslado
+                </button>
+              </div>
+            </section>
           </div>
 
-          {/* Historial colapsable */}
-          <Panel className="shrink-0 !p-0 overflow-hidden">
+          {/* 3) Historial */}
+          <Panel className="relative z-0 order-3 !p-0 overflow-hidden">
             <button
               type="button"
               className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left transition hover:bg-[var(--bg-soft)]"
@@ -546,7 +552,7 @@ export default function BodegaPage() {
                         className="rounded-xl border border-[var(--line)] bg-[var(--bg-soft)] px-3 py-2.5"
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-semibold">
+                          <p className="min-w-0 flex-1 truncate text-sm font-semibold">
                             {branchName(t.fromBranchId)} →{" "}
                             {branchName(t.toBranchId)}
                           </p>

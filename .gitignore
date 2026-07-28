@@ -31,7 +31,10 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
-.env*
+.env
+.env.local
+.env.*.local
+!.env.example
 
 # vercel
 .vercel
@@ -42,6 +45,13 @@ next-env.d.ts
 
 # shared store (runtime data)
 /data/store.json
+/data/store.db
+/data/store.db-*
+/data/backups/
 
 # local HTTPS certs
 /certificates/
+data/backups/
+
+# backups
+/data/backups/

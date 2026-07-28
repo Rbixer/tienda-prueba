@@ -490,7 +490,7 @@ export default function UsuariosPage() {
               Equipo ({data.users.length})
             </h2>
 
-            <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto md:hidden">
+            <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto lg:hidden">
               {data.users.map((user) => {
                 return (
                   <div
@@ -552,8 +552,8 @@ export default function UsuariosPage() {
               ) : null}
             </div>
 
-            <div className="mt-3 hidden min-h-0 flex-1 overflow-auto md:block">
-              <table className="w-full min-w-[640px] text-left text-sm">
+            <div className="mt-3 hidden min-h-0 flex-1 overflow-auto lg:block">
+              <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-[var(--line)] text-xs uppercase tracking-wide text-[var(--muted)]">
                     <th className="pb-2 font-medium">Nombre</th>

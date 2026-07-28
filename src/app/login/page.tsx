@@ -7,27 +7,17 @@ import { CompanyBrand } from "@/components/CompanyBrand";
 import { safeAppPath } from "@/lib/nav";
 import { REMEMBER_LOGIN_KEY } from "@/lib/store";
 
-function loadRemembered(): {
-  username: string;
-  password: string;
-  remember: boolean;
-} {
+function loadRemembered(): { username: string; remember: boolean } {
   try {
     const raw = localStorage.getItem(REMEMBER_LOGIN_KEY);
-    if (!raw) {
-      return { username: "admin", password: "admin123", remember: false };
-    }
-    const parsed = JSON.parse(raw) as {
-      username?: string;
-      password?: string;
-    };
+    if (!raw) return { username: "", remember: false };
+    const parsed = JSON.parse(raw) as { username?: string };
     return {
       username: parsed.username ?? "",
-      password: parsed.password ?? "",
       remember: true,
     };
   } catch {
-    return { username: "admin", password: "admin123", remember: false };
+    return { username: "", remember: false };
   }
 }
 
@@ -40,12 +30,12 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const nextPath = safeAppPath(searchParams.get("next"));
 
   useEffect(() => {
     const saved = loadRemembered();
     setUsername(saved.username);
-    setPassword(saved.password);
     setRemember(saved.remember);
   }, []);
 
@@ -53,29 +43,33 @@ function LoginForm() {
     if (ready && session) router.replace(nextPath);
   }, [ready, session, router, nextPath]);
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    const err = login(username, password);
-    if (err) {
-      setError(err);
-      return;
-    }
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
     try {
-      if (remember) {
-        localStorage.setItem(
-          REMEMBER_LOGIN_KEY,
-          JSON.stringify({
-            username: username.trim(),
-            password,
-          }),
-        );
-      } else {
-        localStorage.removeItem(REMEMBER_LOGIN_KEY);
+      const err = await login(username, password);
+      if (err) {
+        setError(err);
+        return;
       }
-    } catch {
-      // ignore storage errors
+      try {
+        if (remember) {
+          localStorage.setItem(
+            REMEMBER_LOGIN_KEY,
+            JSON.stringify({ username: username.trim() }),
+          );
+        } else {
+          localStorage.removeItem(REMEMBER_LOGIN_KEY);
+        }
+      } catch {
+        // ignore storage errors
+      }
+      router.replace(nextPath);
+    } finally {
+      setSubmitting(false);
     }
-    router.replace(nextPath);
   }
 
   return (
@@ -133,7 +127,7 @@ function LoginForm() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete={remember ? "current-password" : "off"}
+                autoComplete="current-password"
                 required
                 placeholder="••••••••"
               />
@@ -156,7 +150,7 @@ function LoginForm() {
                 }
               }}
             />
-            <span>Recordar usuario y contraseña</span>
+            <span>Recordarme</span>
           </label>
 
           {error ? (
@@ -168,20 +162,13 @@ function LoginForm() {
           <button
             type="submit"
             className="login-unity__submit"
-            disabled={!ready}
+            disabled={!ready || submitting}
           >
-            <span>{ready ? "Entrar" : "Cargando..."}</span>
+            <span>
+              {!ready ? "Cargando..." : submitting ? "Entrando..." : "Entrar"}
+            </span>
             <ArrowRight size={18} strokeWidth={2.4} />
           </button>
-
-          <div className="login-unity__demo">
-            <p>
-              <strong>Admin</strong> admin / admin123
-            </p>
-            <p>
-              <strong>Vendedor</strong> vendedor / vendedor123
-            </p>
-          </div>
         </form>
       </div>
     </div>

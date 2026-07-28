@@ -59,44 +59,44 @@ function PasswordField({
 }
 
 function ChangePasswordPanel() {
-  const { data, session, updateUser } = useAuth();
+  const { session } = useAuth();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setOk(null);
+    setError(null);
     if (!session) return;
-    const me = data.users.find((u) => u.id === session.userId);
-    if (!me) {
-      setError("No se encontró tu usuario.");
-      return;
-    }
-    if (me.password !== current) {
-      setError("La contraseña actual no es correcta.");
-      return;
-    }
-    if (next.trim().length < 4) {
-      setError("La nueva contraseña debe tener al menos 4 caracteres.");
+    if (next.trim().length < 8) {
+      setError("La nueva contraseña debe tener al menos 8 caracteres.");
       return;
     }
     if (next !== confirm) {
       setError("La confirmación no coincide con la nueva contraseña.");
       return;
     }
-    const err = updateUser(session.userId, { password: next.trim() });
-    if (err) {
-      setError(err);
-      return;
+    setSaving(true);
+    try {
+      const { apiChangePassword } = await import("@/lib/sync");
+      await apiChangePassword(current, next.trim());
+      setOk("Contraseña actualizada correctamente.");
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "No se pudo actualizar la contraseña.",
+      );
+    } finally {
+      setSaving(false);
     }
-    setError(null);
-    setOk("Contraseña actualizada correctamente.");
-    setCurrent("");
-    setNext("");
-    setConfirm("");
   }
 
   return (
@@ -123,7 +123,7 @@ function ChangePasswordPanel() {
           <PasswordField
             value={next}
             onChange={setNext}
-            placeholder="Mínimo 4 caracteres"
+            placeholder="Mínimo 8 caracteres"
           />
         </Field>
         <Field label="Confirmar nueva contraseña">
@@ -141,8 +141,12 @@ function ChangePasswordPanel() {
           </p>
         ) : null}
 
-        <button type="submit" className={`${buttonPrimary} w-full`}>
-          Actualizar contraseña
+        <button
+          type="submit"
+          className={`${buttonPrimary} w-full`}
+          disabled={saving}
+        >
+          {saving ? "Guardando..." : "Actualizar contraseña"}
         </button>
       </form>
     </Panel>

@@ -19,13 +19,14 @@ export function HourlySalesChart({ hours }: Props) {
           </p>
         </div>
       </div>
-      <div className="flex h-36 max-w-full items-end gap-0.5 overflow-x-auto overscroll-x-contain pb-1 sm:gap-1">
+      <div className="flex h-36 max-w-full items-end gap-px overflow-x-auto overscroll-x-contain pb-1 sm:gap-1">
         {hours.map((h) => {
           const height = Math.max(4, (h.total / max) * 100);
+          const showLabel = h.hour % 3 === 0 || h.hour === 23;
           return (
             <div
               key={h.hour}
-              className="group flex w-5 shrink-0 flex-col items-center gap-1 sm:min-w-0 sm:w-auto sm:flex-1"
+              className="group flex min-w-0 flex-1 flex-col items-center gap-1"
               title={`${h.label}: ${formatMoney(h.total)}`}
             >
               <div className="flex h-28 w-full items-end justify-center">
@@ -34,7 +35,11 @@ export function HourlySalesChart({ hours }: Props) {
                   style={{ height: `${height}%` }}
                 />
               </div>
-              <span className="text-[8px] font-medium text-[var(--muted)] sm:text-[9px]">
+              <span
+                className={`text-[8px] font-medium text-[var(--muted)] sm:text-[9px] ${
+                  showLabel ? "" : "max-sm:invisible"
+                }`}
+              >
                 {h.hour}
               </span>
             </div>

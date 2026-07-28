@@ -18,8 +18,8 @@ export const STORAGE_KEY = "tienda-barrio-data-v10";
 export const SESSION_KEY = "tienda-barrio-session-v2";
 /** Cierre automático por inactividad (30 minutos). */
 export const SESSION_IDLE_MS = 30 * 60 * 1000;
-/** Credenciales recordadas en el login (usuario + contraseña). */
-export const REMEMBER_LOGIN_KEY = "tienda-barrio-remember-login-v1";
+/** Usuario recordado en el login (nunca la contraseña). */
+export const REMEMBER_LOGIN_KEY = "tienda-barrio-remember-login-v2";
 export const BODEGA_CENTRAL_ID = "bodega-central";
 
 export const DEFAULT_PDF_STYLE: PdfStyleSettings = {
@@ -666,6 +666,10 @@ export function normalizeStoreData(raw: Partial<StoreData> & {
     }),
   );
   return {
+    version:
+      typeof raw.version === "number" && Number.isFinite(raw.version)
+        ? Math.max(0, Math.floor(raw.version))
+        : 0,
     branches,
     users,
     products: raw.products ?? [],

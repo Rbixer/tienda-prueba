@@ -46,7 +46,7 @@ function CartQtyInput({
       inputMode="numeric"
       min={1}
       max={max}
-      className="h-9 w-14 rounded-lg border border-[var(--line)] bg-white text-center text-sm font-semibold outline-none focus:border-[var(--brand)]"
+      className="h-11 w-14 rounded-lg border border-[var(--line)] bg-white text-center text-base font-semibold outline-none focus:border-[var(--brand)] sm:h-9 sm:text-sm"
       value={text}
       aria-label="Cantidad"
       onFocus={(e) => {
@@ -249,7 +249,11 @@ export default function PosPage() {
       setMessage(null);
       return;
     }
-    setMessage(`Venta registrada por ${formatMoney(saleTotal)}`);
+    setMessage(
+      result.offline
+        ? `Venta offline por ${formatMoney(saleTotal)} · se sincronizará al recuperar red`
+        : `Venta registrada por ${formatMoney(saleTotal)}`,
+    );
     setError(null);
     setCart([]);
     setCartOpen(false);
@@ -293,14 +297,14 @@ export default function PosPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
-                  className="rounded-lg p-1.5 hover:bg-white"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-white"
                   onClick={() => changeQty(item.productId, -1)}
                   aria-label="Restar"
                 >
-                  <Minus size={14} />
+                  <Minus size={16} />
                 </button>
                 <CartQtyInput
                   value={item.quantity}
@@ -312,15 +316,15 @@ export default function PosPage() {
                 />
                 <button
                   type="button"
-                  className="rounded-lg p-1.5 hover:bg-white"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-white"
                   onClick={() => changeQty(item.productId, 1)}
                   aria-label="Sumar"
                 >
-                  <Plus size={14} />
+                  <Plus size={16} />
                 </button>
                 <button
                   type="button"
-                  className="ml-1 rounded-lg p-1.5 text-red-600 hover:bg-red-50"
+                  className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
                   onClick={() =>
                     setCart((prev) =>
                       prev.filter((i) => i.productId !== item.productId),
@@ -328,7 +332,7 @@ export default function PosPage() {
                   }
                   aria-label="Quitar"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={16} />
                 </button>
               </div>
             </div>

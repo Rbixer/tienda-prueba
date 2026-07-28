@@ -91,11 +91,11 @@ function StatCard({
             <Icon size={18} />
           </span>
         </div>
-        <p className="mt-4 truncate font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight sm:text-3xl">
+        <p className="mt-4 break-words font-[family-name:var(--font-display)] text-[clamp(1.05rem,4.5vw,1.875rem)] font-bold leading-tight tracking-tight sm:text-3xl">
           {value}
         </p>
         {footer ? (
-          <div className="mt-3 truncate text-xs text-white/70">{footer}</div>
+          <div className="mt-3 line-clamp-2 text-xs text-white/70">{footer}</div>
         ) : null}
       </section>
     );
@@ -113,7 +113,7 @@ function StatCard({
           <Icon size={18} />
         </span>
       </div>
-      <p className="mt-4 truncate font-[family-name:var(--font-display)] text-[1.45rem] font-bold leading-none tracking-tight text-[var(--ink)] sm:text-[1.7rem]">
+      <p className="mt-4 break-words font-[family-name:var(--font-display)] text-[clamp(1.05rem,4.5vw,1.7rem)] font-bold leading-tight tracking-tight text-[var(--ink)]">
         {value}
       </p>
       <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
@@ -134,7 +134,7 @@ function StatCard({
           </span>
         ) : null}
         {footer ? (
-          <span className="truncate text-xs text-[var(--muted)]">{footer}</span>
+          <span className="line-clamp-2 text-xs text-[var(--muted)]">{footer}</span>
         ) : null}
       </div>
     </section>
