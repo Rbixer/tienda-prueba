@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
 import { promises as fs } from "fs";
 import path from "path";
 import { createInitialData, normalizeStoreData } from "@/lib/store";
@@ -11,14 +11,50 @@ const DB_FILE = path.join(DATA_DIR, "store.db");
 const BACKUP_DIR = path.join(DATA_DIR, "backups");
 const MAX_BACKUPS = 30;
 
-let db: DatabaseSync | null = null;
+/** node:sqlite (DatabaseSync) solo existe en Node 22.5+. En Node 20 usamos JSON. */
+type SqliteDatabase = {
+  exec(sql: string): void;
+  prepare(sql: string): {
+    run(...params: unknown[]): unknown;
+    get(...params: unknown[]): unknown;
+  };
+  close(): void;
+};
+
+type SqliteModule = {
+  DatabaseSync: new (path: string) => SqliteDatabase;
+};
+
+let db: SqliteDatabase | null = null;
+let sqliteUnavailable = false;
+let sqliteWarned = false;
+/** Cache en memoria; se invalida al recargar el módulo. */
 let cache: StoreData | null = null;
 let writeChain: Promise<void> = Promise.resolve();
 
-function getDb(): DatabaseSync {
+function loadSqliteModule(): SqliteModule | null {
+  if (sqliteUnavailable) return null;
+  try {
+    const nodeRequire = createRequire(import.meta.url);
+    // Concatenado para que el bundler no evalúe node:sqlite al cargar el módulo.
+    return nodeRequire("node:" + "sqlite") as SqliteModule;
+  } catch {
+    sqliteUnavailable = true;
+    if (!sqliteWarned) {
+      sqliteWarned = true;
+      console.warn(
+        "[store] node:sqlite no está disponible en este Node. Persistiendo en data/store.json.",
+      );
+    }
+    return null;
+  }
+}
+
+function getDb(): SqliteDatabase | null {
   if (db) return db;
-  // sync mkdir via DatabaseSync parent — ensure dir exists beforehand in callers
-  db = new DatabaseSync(DB_FILE);
+  const sqlite = loadSqliteModule();
+  if (!sqlite) return null;
+  db = new sqlite.DatabaseSync(DB_FILE);
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA synchronous = NORMAL;
@@ -84,7 +120,9 @@ async function mirrorJsonFile(data: StoreData): Promise<void> {
 }
 
 function readFromDb(): StoreData | null {
-  const row = getDb()
+  const database = getDb();
+  if (!database) return null;
+  const row = database
     .prepare("SELECT payload FROM store_doc WHERE id = 1")
     .get() as { payload?: string } | undefined;
   if (!row?.payload) return null;
@@ -96,9 +134,11 @@ function readFromDb(): StoreData | null {
 }
 
 function writeToDb(data: StoreData): void {
+  const database = getDb();
+  if (!database) return;
   const payload = JSON.stringify(data);
   const updatedAt = new Date().toISOString();
-  getDb()
+  database
     .prepare(
       `INSERT INTO store_doc (id, version, payload, updated_at)
        VALUES (1, ?, ?, ?)

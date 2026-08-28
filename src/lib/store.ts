@@ -14,7 +14,7 @@ import type {
   User,
 } from "./types";
 
-export const STORAGE_KEY = "tienda-barrio-data-v10";
+export const STORAGE_KEY = "tienda-barrio-data-v11";
 export const SESSION_KEY = "tienda-barrio-session-v2";
 /** Cierre automático por inactividad (30 minutos). */
 export const SESSION_IDLE_MS = 30 * 60 * 1000;
@@ -609,30 +609,11 @@ export function createMockSales(products: Product[]): Sale[] {
 }
 
 export function createInitialData(): StoreData {
-  const now = new Date().toISOString();
-  const storeProducts = [...DEFAULT_PRODUCTS, ...createCatalogProducts()];
-  // Bodega: un ítem por nombre (no duplicar el mismo producto de cada sucursal)
-  const seen = new Set<string>();
-  const warehouseStock: Product[] = [];
-  for (const p of storeProducts) {
-    const key = p.name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    warehouseStock.push({
-      ...p,
-      id: `prod-wh-${warehouseStock.length + 1}`,
-      quantity: 150 + (warehouseStock.length % 40) * 4,
-      branchId: BODEGA_CENTRAL_ID,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-  const products = [...warehouseStock, ...storeProducts];
   return normalizeStoreData({
     branches: DEFAULT_BRANCHES,
     users: DEFAULT_USERS,
-    products,
-    sales: createMockSales(storeProducts),
+    products: [],
+    sales: [],
     transfers: [],
     suppliers: [],
     supplierPayments: [],

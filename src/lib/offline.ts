@@ -3,8 +3,8 @@ import { applyQueuedSale, type StockConflict } from "@/lib/checkout";
 
 /** Cola offline fina: una entrada por venta, con reintentos y conflictos. */
 
-export const PENDING_SYNC_KEY = "tienda-barrio-pending-sync-v2";
-export const OFFLINE_QUEUE_KEY = "tienda-barrio-offline-queue-v2";
+export const PENDING_SYNC_KEY = "tienda-barrio-pending-sync-v3";
+export const OFFLINE_QUEUE_KEY = "tienda-barrio-offline-queue-v3";
 /** Clave legada (solo migración). */
 const LEGACY_OFFLINE_SALES_KEY = "tienda-barrio-offline-sales-v1";
 const LEGACY_PENDING_KEY = "tienda-barrio-pending-sync-v1";
