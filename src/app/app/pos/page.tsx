@@ -20,9 +20,44 @@ import {
 } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { barcodesMatch, normalizeBarcode } from "@/lib/barcode";
-import { printSaleTicket } from "@/lib/pdf";
+import { downloadInvoicePdf, printSaleTicket } from "@/lib/pdf";
 import { formatMoney, formatDate } from "@/lib/store";
-import type { SaleItem } from "@/lib/types";
+import {
+  canSellBlister,
+  canSellUnit,
+  commitSaleItem,
+  packName,
+  packPrice,
+  packStock,
+  sellableBlisters,
+  sellableBoxes,
+  sellableUnits,
+  type SalePack,
+} from "@/lib/stock";
+import {
+  PHARMACY_CATEGORIES,
+  categoryLabel,
+  expiryBadge,
+  expiryTone,
+  formatExpiry,
+  productSearchText,
+  productSubtitle,
+} from "@/lib/pharmacy";
+import type { PaymentMethod, PharmacyCategory, Product, SaleItem } from "@/lib/types";
+
+function lineKey(item: { productId: string; saleUnit?: string }) {
+  return `${item.productId}:${item.saleUnit ?? "caja"}`;
+}
+
+function cartFits(product: Product, nextCart: SaleItem[]) {
+  let stock = product;
+  for (const line of nextCart.filter((item) => item.productId === product.id)) {
+    const result = commitSaleItem(stock, line);
+    if (result.error) return false;
+    stock = result.product;
+  }
+  return true;
+}
 
 function CartQtyInput({
   value,
@@ -78,6 +113,7 @@ export default function PosPage() {
     branchSales,
     checkout,
     currentBranchName,
+    session,
     data,
   } = useAuth();
   const [query, setQuery] = useState("");
@@ -86,55 +122,118 @@ export default function PosPage() {
   const [cartOpen, setCartOpen] = useState(false);
   const [printTicket, setPrintTicket] = useState(true);
   const [printing, setPrinting] = useState(false);
+  const [category, setCategory] = useState<PharmacyCategory | "todos">("todos");
+  const [payMethod, setPayMethod] = useState<PaymentMethod>("efectivo");
+  const [received, setReceived] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerNit, setCustomerNit] = useState("");
+  const [issueInvoice, setIssueInvoice] = useState(false);
+  const [rxNumber, setRxNumber] = useState("");
+  const [rxDoctor, setRxDoctor] = useState("");
+  const [rxPatient, setRxPatient] = useState("");
+  const [rxDate, setRxDate] = useState("");
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  const [pickUnit, setPickUnit] = useState<SalePack>("caja");
+  const [pickQty, setPickQty] = useState(1);
+
+  const openShiftRow = (data.cashShifts ?? []).find(
+    (shift) => shift.branchId === session?.branchId && !shift.closedAt,
+  );
 
   const available = useMemo(() => {
     const q = query.trim().toLowerCase();
     return branchProducts
-      .filter((p) => p.quantity > 0)
       .filter(
         (p) =>
-          !q ||
-          p.name.toLowerCase().includes(q) ||
-          (p.barcode ?? "").toLowerCase().includes(q),
-      );
-  }, [branchProducts, query]);
+          sellableBoxes(p) > 0 ||
+          (canSellBlister(p) && sellableBlisters(p) > 0) ||
+          (canSellUnit(p) && sellableUnits(p) > 0),
+      )
+      .filter((p) => category === "todos" || p.category === category)
+      .filter((p) => !q || productSearchText(p).includes(q));
+  }, [branchProducts, query, category]);
 
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartUnits = cart.reduce((n, item) => n + item.quantity, 0);
+  const receivedAmount = Number(received);
+  const cashCovers =
+    payMethod !== "efectivo" ||
+    (Number.isFinite(receivedAmount) && receivedAmount + 0.001 >= total);
+  const change =
+    payMethod === "efectivo" && cashCovers ? receivedAmount - total : 0;
+
+  const openProduct = useCallback((productId: string) => {
+    const product = branchProducts.find((item) => item.id === productId);
+    const boxes = product ? sellableBoxes(product) : 0;
+    const blisters = product ? sellableBlisters(product) : 0;
+    const nextUnit: SalePack =
+      boxes > 0
+        ? "caja"
+        : product && canSellBlister(product) && blisters > 0
+          ? "blister"
+          : "unidad";
+    setPickedId(productId);
+    setPickUnit(nextUnit);
+    setPickQty(1);
+    setError(null);
+  }, [branchProducts]);
 
   const addToCart = useCallback(
-    (productId: string) => {
+    (productId: string, saleUnit: SalePack = "caja", amount = 1) => {
+      const quantity = Math.max(1, Math.floor(amount));
       const product = branchProducts.find((p) => p.id === productId);
-      if (!product || product.quantity <= 0) return false;
+      if (!product) return false;
+      if (saleUnit === "unidad" && !canSellUnit(product)) {
+        setError(`${product.name} no se vende por unidad.`);
+        setMessage(null);
+        return false;
+      }
+      if (saleUnit === "blister" && !canSellBlister(product)) {
+        setError(`${product.name} no se vende por blíster.`);
+        setMessage(null);
+        return false;
+      }
+      const sellable = packStock(product, saleUnit);
+      if (sellable <= 0) {
+        setError(
+          expiryTone(product.expiresAt) === "expired"
+            ? `${product.name} está vencido (${formatExpiry(product.expiresAt)}). No se puede dispensar.`
+            : `Sin stock de ${product.name}`,
+        );
+        setMessage(null);
+        return false;
+      }
       let ok = true;
       setCart((prev) => {
-        const existing = prev.find((i) => i.productId === productId);
-        const currentQty = existing?.quantity ?? 0;
-        if (currentQty + 1 > product.quantity) {
+        const key = `${productId}:${saleUnit}`;
+        const existing = prev.find((item) => lineKey(item) === key);
+        const next = existing
+          ? prev.map((item) =>
+              lineKey(item) === key
+                ? { ...item, quantity: item.quantity + quantity }
+                : item,
+            )
+          : [
+              ...prev,
+              {
+                productId: product.id,
+                name: product.name,
+                price: packPrice(product, saleUnit),
+                quantity,
+                image: product.image,
+                saleUnit,
+              },
+            ];
+        if (!cartFits(product, next)) {
           setError(`Stock insuficiente de ${product.name}`);
           ok = false;
           return prev;
         }
         setError(null);
-        if (existing) {
-          return prev.map((i) =>
-            i.productId === productId
-              ? { ...i, quantity: i.quantity + 1 }
-              : i,
-          );
-        }
-        return [
-          ...prev,
-          {
-            productId: product.id,
-            name: product.name,
-            price: product.price,
-            quantity: 1,
-            image: product.image,
-          },
-        ];
+        return next;
       });
       return ok;
     },
@@ -160,19 +259,17 @@ export default function PosPage() {
         setMessage(null);
         return;
       }
-      if (product.quantity <= 0) {
+      if (sellableBoxes(product) <= 0 && sellableUnits(product) <= 0) {
         setError(`Sin stock de ${product.name}`);
         setMessage(null);
         return;
       }
-      const ok = addToCart(product.id);
-      if (ok) {
-        setMessage(`Agregado: ${product.name}`);
-        setError(null);
-        setBarcodeInput("");
-      }
+      openProduct(product.id);
+      setError(null);
+      setMessage(null);
+      setBarcodeInput("");
     },
-    [addToCart, branchProducts],
+    [branchProducts, openProduct],
   );
 
   /** Solo llena el campo; no agrega hasta que se pulse Agregar. */
@@ -188,52 +285,47 @@ export default function PosPage() {
     setMessage(`Código leído: ${normalized}. Presiona Agregar.`);
   }, []);
 
-  function changeQty(productId: string, delta: number) {
+  function changeQty(key: string, delta: number) {
+    const productId = key.split(":")[0];
     const product = branchProducts.find((p) => p.id === productId);
-    setCart((prev) =>
-      prev
-        .map((item) => {
-          if (item.productId !== productId) return item;
-          const next = item.quantity + delta;
-          if (product && next > product.quantity) {
-            setError(`Stock insuficiente de ${item.name}`);
-            return item;
-          }
-          setError(null);
-          return { ...item, quantity: next };
-        })
-        .filter((item) => item.quantity > 0),
-    );
+    setCart((prev) => {
+      const next = prev
+        .map((item) =>
+          lineKey(item) === key
+            ? { ...item, quantity: item.quantity + delta }
+            : item,
+        )
+        .filter((item) => item.quantity > 0);
+      if (product && !cartFits(product, next)) {
+        setError(`Stock insuficiente de ${product.name}`);
+        return prev;
+      }
+      setError(null);
+      return next;
+    });
   }
 
-  function setQty(productId: string, nextQty: number) {
+  function setQty(key: string, nextQty: number) {
+    const productId = key.split(":")[0];
     const product = branchProducts.find((p) => p.id === productId);
     if (!product) return;
     const qty = Math.floor(Number(nextQty));
     if (!Number.isFinite(qty) || qty <= 0) {
-      setCart((prev) => prev.filter((i) => i.productId !== productId));
+      setCart((prev) => prev.filter((item) => lineKey(item) !== key));
       setError(null);
       return;
     }
-    if (qty > product.quantity) {
-      setError(
-        `Stock insuficiente de ${product.name}. Máximo ${product.quantity}.`,
+    setCart((prev) => {
+      const next = prev.map((item) =>
+        lineKey(item) === key ? { ...item, quantity: qty } : item,
       );
-      setCart((prev) =>
-        prev.map((item) =>
-          item.productId === productId
-            ? { ...item, quantity: product.quantity }
-            : item,
-        ),
-      );
-      return;
-    }
-    setError(null);
-    setCart((prev) =>
-      prev.map((item) =>
-        item.productId === productId ? { ...item, quantity: qty } : item,
-      ),
-    );
+      if (!cartFits(product, next)) {
+        setError(`Stock insuficiente de ${product.name}.`);
+        return prev;
+      }
+      setError(null);
+      return next;
+    });
   }
 
   function clearCart() {
@@ -242,8 +334,52 @@ export default function PosPage() {
   }
 
   async function onCheckout() {
+    if (payMethod === "efectivo" && !cashCovers) {
+      setError("El efectivo recibido no cubre el total.");
+      setMessage(null);
+      return;
+    }
+    if (!openShiftRow) {
+      setError("La caja no está abierta. Apérturala desde el inicio.");
+      setMessage(null);
+      return;
+    }
+    const needsRx = cart.some(
+      (item) => branchProducts.find((p) => p.id === item.productId)?.controlled,
+    );
+    if (needsRx && (!rxNumber.trim() || !rxDoctor.trim() || !rxPatient.trim() || !rxDate)) {
+      setError("Completa la receta del medicamento controlado.");
+      setMessage(null);
+      return;
+    }
+    if (issueInvoice && (!customerNit.trim() || !customerName.trim())) {
+      setError("La factura necesita NIT y nombre del receptor.");
+      setMessage(null);
+      return;
+    }
     const saleTotal = total;
-    const result = checkout(cart);
+    const result = checkout(
+      cart,
+      {
+        method: payMethod,
+        amountReceived: payMethod === "efectivo" ? receivedAmount : undefined,
+      },
+      {
+        customerName,
+        customerPhone,
+        customerNit,
+        issueInvoice,
+        shiftId: openShiftRow.id,
+        prescription: needsRx
+          ? {
+              number: rxNumber.trim(),
+              doctor: rxDoctor.trim(),
+              patient: rxPatient.trim(),
+              date: rxDate,
+            }
+          : undefined,
+      },
+    );
     if (result.error || !result.sale) {
       setError(result.error ?? "No se pudo completar la venta.");
       setMessage(null);
@@ -256,7 +392,31 @@ export default function PosPage() {
     );
     setError(null);
     setCart([]);
+    setReceived("");
     setCartOpen(false);
+    setCustomerName("");
+    setCustomerPhone("");
+    setCustomerNit("");
+    setIssueInvoice(false);
+    setRxNumber("");
+    setRxDoctor("");
+    setRxPatient("");
+    setRxDate("");
+
+    const invoice = result.invoice;
+    if (invoice && result.sale) {
+      try {
+        await downloadInvoicePdf({
+          invoice,
+          sale: result.sale,
+          companyName: data.settings?.companyName,
+          address: data.settings?.address,
+          phone: data.settings?.phone,
+        });
+      } catch {
+        setError("La venta se registró, pero no se pudo generar la factura.");
+      }
+    }
 
     if (!printTicket) return;
 
@@ -285,7 +445,7 @@ export default function PosPage() {
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
           {cart.map((item) => (
             <div
-              key={item.productId}
+              key={lineKey(item)}
               className="flex items-center justify-between gap-3 rounded-md border border-[var(--line)] bg-[var(--bg-soft)] px-3 py-2"
             >
               <div className="flex min-w-0 items-center gap-2">
@@ -293,7 +453,11 @@ export default function PosPage() {
                 <div className="min-w-0">
                   <p className="truncate font-medium">{item.name}</p>
                   <p className="text-xs text-[var(--muted)]">
-                    {formatMoney(item.price)} c/u
+                    {formatMoney(item.price)} · {packName(item.saleUnit)}
+                    {branchProducts.find((p) => p.id === item.productId)
+                      ?.requiresPrescription
+                      ? " · Receta"
+                      : ""}
                   </p>
                 </div>
               </div>
@@ -301,23 +465,20 @@ export default function PosPage() {
                 <button
                   type="button"
                   className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-white"
-                  onClick={() => changeQty(item.productId, -1)}
+                  onClick={() => changeQty(lineKey(item), -1)}
                   aria-label="Restar"
                 >
                   <Minus size={16} />
                 </button>
                 <CartQtyInput
                   value={item.quantity}
-                  max={
-                    branchProducts.find((p) => p.id === item.productId)
-                      ?.quantity ?? item.quantity
-                  }
-                  onCommit={(qty) => setQty(item.productId, qty)}
+                  max={999}
+                  onCommit={(qty) => setQty(lineKey(item), qty)}
                 />
                 <button
                   type="button"
                   className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-white"
-                  onClick={() => changeQty(item.productId, 1)}
+                  onClick={() => changeQty(lineKey(item), 1)}
                   aria-label="Sumar"
                 >
                   <Plus size={16} />
@@ -327,7 +488,7 @@ export default function PosPage() {
                   className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
                   onClick={() =>
                     setCart((prev) =>
-                      prev.filter((i) => i.productId !== item.productId),
+                      prev.filter((i) => lineKey(i) !== lineKey(item)),
                     )
                   }
                   aria-label="Quitar"
@@ -362,6 +523,127 @@ export default function PosPage() {
               {message}
             </p>
           ) : null}
+          <div className="mt-2 grid gap-2">
+            <input
+              className={inputClass}
+              placeholder="Nombre del cliente"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                className={inputClass}
+                placeholder="Teléfono"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+              />
+              <input
+                className={inputClass}
+                placeholder="NIT"
+                value={customerNit}
+                onChange={(e) => setCustomerNit(e.target.value)}
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-[var(--brand)]"
+                checked={issueInvoice}
+                onChange={(e) => setIssueInvoice(e.target.checked)}
+              />
+              Emitir factura
+            </label>
+          </div>
+          {cart.some(
+            (item) =>
+              branchProducts.find((product) => product.id === item.productId)
+                ?.controlled,
+          ) ? (
+            <div className="mt-2 grid gap-2 rounded-xl border border-rose-200 bg-rose-50 p-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-800">
+                Receta de controlado
+              </p>
+              <input
+                className={inputClass}
+                placeholder="Número de receta"
+                value={rxNumber}
+                onChange={(e) => setRxNumber(e.target.value)}
+              />
+              <input
+                className={inputClass}
+                placeholder="Médico"
+                value={rxDoctor}
+                onChange={(e) => setRxDoctor(e.target.value)}
+              />
+              <input
+                className={inputClass}
+                placeholder="Paciente"
+                value={rxPatient}
+                onChange={(e) => setRxPatient(e.target.value)}
+              />
+              <input
+                type="date"
+                className={inputClass}
+                value={rxDate}
+                onChange={(e) => setRxDate(e.target.value)}
+              />
+            </div>
+          ) : null}
+          <div className="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-[var(--bg-soft)] p-1">
+            {(
+              [
+                ["efectivo", "Efectivo"],
+                ["tarjeta", "Tarjeta"],
+                ["transferencia", "Transf."],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={`min-h-10 rounded-lg text-xs font-semibold ${
+                  payMethod === id
+                    ? "bg-white text-[var(--brand)] shadow-sm"
+                    : "text-[var(--muted)]"
+                }`}
+                onClick={() => setPayMethod(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {payMethod === "efectivo" ? (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                  Recibido
+                </span>
+                <input
+                  className={inputClass}
+                  inputMode="decimal"
+                  value={received}
+                  placeholder="0.00"
+                  onChange={(e) => setReceived(e.target.value)}
+                />
+              </label>
+              <div className="rounded-xl border border-[var(--line)] bg-white px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                  Vuelto
+                </p>
+                <p className="mt-1 text-lg font-semibold text-[var(--brand)]">
+                  {cashCovers ? formatMoney(Math.max(change, 0)) : "—"}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {payMethod === "efectivo" ? (
+            <button
+              type="button"
+              className={`${buttonSecondary} mt-2 min-h-10 w-full`}
+              onClick={() => setReceived(total.toFixed(2))}
+            >
+              Pago exacto
+            </button>
+          ) : null}
           <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm">
             <input
               type="checkbox"
@@ -377,7 +659,7 @@ export default function PosPage() {
               type="button"
               className={`${buttonPrimary} min-h-11 flex-1`}
               onClick={() => void onCheckout()}
-              disabled={cart.length === 0 || printing}
+              disabled={cart.length === 0 || printing || !cashCovers}
             >
               {printing
                 ? "Imprimiendo…"
@@ -399,12 +681,17 @@ export default function PosPage() {
     );
   }
 
+  const picked = branchProducts.find((product) => product.id === pickedId) ?? null;
+  const pickedCanUnit = Boolean(picked && canSellUnit(picked));
+  const pickedCanBlister = Boolean(picked && canSellBlister(picked));
+  const pickedMax = picked ? packStock(picked, pickUnit) : 0;
+
   return (
     <BarcodeCapture onDetected={fillBarcodeFromScan}>
       {({ openCamera, busy }) => (
         <AppShell
           title="Punto de venta"
-          subtitle={`POS sin facturación · ${currentBranchName}`}
+          subtitle="Cobro en mostrador"
         >
           <div className="flex min-h-0 flex-1 flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start xl:grid-cols-[minmax(0,1fr)_24rem]">
             <Panel className="flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:max-h-[calc(100dvh-5.5rem)]">
@@ -439,10 +726,37 @@ export default function PosPage() {
               <div className="mb-2 flex shrink-0 gap-2">
                 <input
                   className={`${inputClass} flex-1`}
-                  placeholder="Buscar nombre…"
+                  placeholder="Nombre, principio activo o lote…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
+              </div>
+              <div className="mb-3 flex shrink-0 gap-1.5 overflow-x-auto pb-1">
+                <button
+                  type="button"
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${
+                    category === "todos"
+                      ? "bg-[var(--brand)] text-white"
+                      : "bg-[var(--bg-soft)] text-[var(--muted)]"
+                  }`}
+                  onClick={() => setCategory("todos")}
+                >
+                  Todos
+                </button>
+                {PHARMACY_CATEGORIES.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${
+                      category === item.id
+                        ? "bg-[var(--brand)] text-white"
+                        : "bg-[var(--bg-soft)] text-[var(--muted)]"
+                    }`}
+                    onClick={() => setCategory(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
               <div className="mb-3 flex shrink-0 gap-2">
                 <input
@@ -479,46 +793,101 @@ export default function PosPage() {
                   <ScanBarcode size={20} />
                 </button>
               </div>
-              <div className="grid min-h-0 flex-1 auto-rows-max content-start gap-2 overflow-y-auto pb-20 sm:grid-cols-2 lg:pb-0 xl:grid-cols-3 2xl:grid-cols-4">
-                {available.map((product) => (
+              <div className="grid min-h-0 flex-1 content-start items-stretch gap-3 overflow-y-auto pb-20 sm:grid-cols-2 lg:pb-0 xl:grid-cols-3 2xl:grid-cols-4">
+                {available.map((product) => {
+                  const expired = expiryTone(product.expiresAt) === "expired";
+                  const badge = expiryBadge(product.expiresAt);
+                  const boxes = sellableBoxes(product);
+                  const sellsUnit = canSellUnit(product);
+                  const sellsBlister = canSellBlister(product);
+                  const stockLabel = `${boxes} ${boxes === 1 ? "caja" : "cajas"}${
+                    product.looseUnits ? ` · ${product.looseUnits} sueltas` : ""
+                  }`;
+                  return (
                   <button
                     key={product.id}
                     type="button"
-                    onClick={() => {
-                      const ok = addToCart(product.id);
-                      if (ok) setMessage(`Agregado: ${product.name}`);
-                    }}
-                    className="flex gap-3 rounded-2xl border border-[var(--line)] bg-white p-3 text-left shadow-sm transition hover:border-[var(--brand)] hover:shadow-md active:scale-[0.99]"
+                    disabled={
+                      expired ||
+                      (boxes <= 0 &&
+                        !(sellsBlister && sellableBlisters(product) > 0) &&
+                        !(sellsUnit && sellableUnits(product) > 0))
+                    }
+                    onClick={() => openProduct(product.id)}
+                    className={`flex h-full min-h-[12.5rem] flex-col rounded-2xl border bg-white p-3 text-left shadow-sm transition hover:border-[var(--brand)]/40 ${
+                      expired
+                        ? "border-red-200 opacity-70"
+                        : "border-[var(--line)]"
+                    }`}
                   >
-                    <ProductThumb
-                      src={product.image}
-                      alt={product.name}
-                      size="xl"
-                    />
-                    <span className="min-w-0 flex-1 self-center">
-                      <p className="font-semibold leading-snug">
-                        {product.name}
-                      </p>
-                      {product.barcode ? (
-                        <p className="mt-0.5 font-mono text-[10px] text-[var(--muted)]">
-                          {product.barcode}
+                    <span className="flex min-w-0 gap-3">
+                      <ProductThumb
+                        src={product.image}
+                        alt={product.name}
+                        size="md"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <p className="line-clamp-2 text-sm font-semibold leading-5">
+                          {product.name}
                         </p>
-                      ) : (
-                        <p className="mt-0.5 text-[10px] text-amber-700">
-                          Sin código
+                        <p className="mt-0.5 h-4 truncate text-[11px] text-[var(--muted)]">
+                          {productSubtitle(product) || "\u00a0"}
                         </p>
-                      )}
-                      <div className="mt-2 flex items-center justify-between gap-2 text-sm">
-                        <span className="font-semibold text-[var(--brand)]">
+                        <span className="mt-1.5 flex h-5 items-center gap-1 overflow-hidden">
+                          {product.category ? (
+                            <span className="shrink-0 rounded-md bg-[var(--brand-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--brand)]">
+                              {categoryLabel(product.category)}
+                            </span>
+                          ) : null}
+                          {product.requiresPrescription || product.controlled ? (
+                            <span className="shrink-0 rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+                              {product.controlled ? "Controlado" : "Receta"}
+                            </span>
+                          ) : null}
+                        </span>
+                      </span>
+                    </span>
+                    <span
+                      className={`mt-2 block h-4 truncate text-[10px] font-semibold leading-4 ${
+                        badge
+                          ? `${badge.className} w-fit max-w-full rounded px-1`
+                          : "text-transparent"
+                      }`}
+                    >
+                      {badge?.label || "\u00a0"}
+                    </span>
+                    <span className="mt-auto grid grid-cols-3 gap-1 pt-2">
+                      <span>
+                        <span className="block text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                          Caja
+                        </span>
+                        <span className="block text-sm font-bold tabular-nums text-[var(--brand)]">
                           {formatMoney(product.price)}
                         </span>
-                        <span className="text-[var(--muted)]">
-                          Stock {product.quantity}
+                      </span>
+                      <span className="text-center">
+                        <span className="block text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                          Blíster
                         </span>
-                      </div>
+                        <span className="block text-sm font-bold tabular-nums text-[var(--ink)]">
+                          {sellsBlister ? formatMoney(product.blisterPrice!) : "—"}
+                        </span>
+                      </span>
+                      <span className="text-right">
+                        <span className="block text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                          Unidad
+                        </span>
+                        <span className="block text-sm font-bold tabular-nums text-[var(--ink)]">
+                          {sellsUnit ? formatMoney(product.unitPrice!) : "—"}
+                        </span>
+                      </span>
+                    </span>
+                    <span className="mt-1 block truncate text-[11px] font-medium text-[var(--muted)]">
+                      {stockLabel}
                     </span>
                   </button>
-                ))}
+                  );
+                })}
                 {available.length === 0 ? (
                   <p className="col-span-full py-10 text-center text-sm text-[var(--muted)]">
                     No hay productos disponibles.
@@ -561,7 +930,7 @@ export default function PosPage() {
                   ))}
                   {branchSales.length === 0 ? (
                     <p className="text-sm text-[var(--muted)]">
-                      Aún no hay ventas en esta sucursal.
+                      Aún no hay ventas.
                     </p>
                   ) : null}
                 </div>
@@ -572,7 +941,7 @@ export default function PosPage() {
           {/* Móvil: solo ícono del carrito */}
           <button
             type="button"
-            className="fixed right-4 z-[55] flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand)] text-white shadow-lg shadow-[var(--brand)]/30 transition active:scale-95 lg:hidden"
+            className="fixed right-[5.5rem] z-[55] flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand)] text-white shadow-lg shadow-[var(--brand)]/30 transition active:scale-95 lg:hidden"
             style={{
               bottom:
                 "calc(3.75rem + env(safe-area-inset-bottom, 0px) + 0.75rem)",
@@ -618,6 +987,223 @@ export default function PosPage() {
                 <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden !p-3">
                   {renderCartBody({ showMessages: true })}
                 </Panel>
+              </div>
+            </div>
+          ) : null}
+
+          {picked ? (
+            <div className="fixed inset-0 z-[85] flex items-end justify-center bg-[var(--navy)]/45 p-3 sm:items-center">
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="product-pick-title"
+                className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-4 shadow-[0_24px_60px_rgba(11,61,50,0.28)] sm:p-5"
+              >
+                <div className="flex items-start gap-3">
+                  <ProductThumb src={picked.image} alt={picked.name} size="lg" />
+                  <div className="min-w-0 flex-1">
+                    <h2
+                      id="product-pick-title"
+                      className="font-[family-name:var(--font-display)] text-lg font-semibold leading-tight"
+                    >
+                      {picked.name}
+                    </h2>
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      {productSubtitle(picked) || "Sin ficha adicional"}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {picked.category ? (
+                        <span className="rounded-md bg-[var(--brand-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--brand)]">
+                          {categoryLabel(picked.category)}
+                        </span>
+                      ) : null}
+                      {picked.requiresPrescription || picked.controlled ? (
+                        <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+                          {picked.controlled ? "Controlado" : "Requiere receta"}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--bg-soft)]"
+                    onClick={() => setPickedId(null)}
+                    aria-label="Cerrar"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <dl className="mt-4 grid grid-cols-2 gap-2">
+                  {[
+                    ["Principio activo", picked.genericName],
+                    ["Presentación", picked.presentation],
+                    ["Concentración", picked.concentration],
+                    ["Laboratorio", picked.laboratory],
+                    ["Lote", picked.lot],
+                    [
+                      "Vencimiento",
+                      picked.expiresAt ? formatExpiry(picked.expiresAt) : undefined,
+                    ],
+                    ["Código", picked.barcode],
+                    [
+                      "Contenido",
+                      [
+                        picked.unitsPerBox
+                          ? `${picked.unitsPerBox} unidades por caja`
+                          : "",
+                        picked.unitsPerBlister
+                          ? `${picked.unitsPerBlister} por blíster`
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || undefined,
+                    ],
+                    [
+                      "Existencia",
+                      `${sellableBoxes(picked)} cajas${
+                        picked.looseUnits ? ` · ${picked.looseUnits} sueltas` : ""
+                      }`,
+                    ],
+                  ]
+                    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+                    .map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="rounded-lg bg-[var(--bg-soft)] px-2.5 py-2"
+                      >
+                        <dt className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                          {label}
+                        </dt>
+                        <dd className="text-sm font-medium">{value}</dd>
+                      </div>
+                    ))}
+                </dl>
+
+                <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                  Cómo se vende
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    disabled={sellableBoxes(picked) <= 0}
+                    onClick={() => {
+                      setPickUnit("caja");
+                      setPickQty(1);
+                    }}
+                    className={`rounded-xl border px-2 py-3 text-left disabled:opacity-40 ${
+                      pickUnit === "caja"
+                        ? "border-[var(--brand)] bg-[var(--brand-soft)]"
+                        : "border-[var(--line)] bg-white"
+                    }`}
+                  >
+                    <span className="block text-xs font-semibold text-[var(--muted)]">
+                      Caja
+                    </span>
+                    <span className="mt-1 block text-base font-bold tabular-nums text-[var(--brand)]">
+                      {formatMoney(picked.price)}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!pickedCanBlister || sellableBlisters(picked) <= 0}
+                    onClick={() => {
+                      setPickUnit("blister");
+                      setPickQty(1);
+                    }}
+                    className={`rounded-xl border px-2 py-3 text-left disabled:opacity-40 ${
+                      pickUnit === "blister"
+                        ? "border-[var(--brand)] bg-[var(--brand-soft)]"
+                        : "border-[var(--line)] bg-white"
+                    }`}
+                  >
+                    <span className="block text-xs font-semibold text-[var(--muted)]">
+                      Blíster
+                    </span>
+                    <span className="mt-1 block text-base font-bold tabular-nums">
+                      {pickedCanBlister
+                        ? formatMoney(picked.blisterPrice!)
+                        : "No aplica"}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!pickedCanUnit || sellableUnits(picked) <= 0}
+                    onClick={() => {
+                      setPickUnit("unidad");
+                      setPickQty(1);
+                    }}
+                    className={`rounded-xl border px-2 py-3 text-left disabled:opacity-40 ${
+                      pickUnit === "unidad"
+                        ? "border-[var(--brand)] bg-[var(--brand-soft)]"
+                        : "border-[var(--line)] bg-white"
+                    }`}
+                  >
+                    <span className="block text-xs font-semibold text-[var(--muted)]">
+                      Unidad
+                    </span>
+                    <span className="mt-1 block text-base font-bold tabular-nums">
+                      {pickedCanUnit ? formatMoney(picked.unitPrice!) : "No aplica"}
+                    </span>
+                  </button>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold">Cantidad</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--line)]"
+                      onClick={() => setPickQty((qty) => Math.max(1, qty - 1))}
+                      aria-label="Menos"
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <span className="w-8 text-center text-base font-bold tabular-nums">
+                      {pickQty}
+                    </span>
+                    <button
+                      type="button"
+                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--line)]"
+                      onClick={() =>
+                        setPickQty((qty) => Math.min(pickedMax, qty + 1))
+                      }
+                      disabled={pickQty >= pickedMax}
+                      aria-label="Más"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    className={buttonSecondary}
+                    onClick={() => setPickedId(null)}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className={buttonPrimary}
+                    disabled={pickedMax <= 0}
+                    onClick={() => {
+                      const ok = addToCart(picked.id, pickUnit, pickQty);
+                      if (!ok) return;
+                      const label =
+                        pickUnit === "unidad"
+                          ? "Unidad"
+                          : pickUnit === "blister"
+                            ? "Blíster"
+                            : "Caja";
+                      setMessage(`${label}: ${picked.name} × ${pickQty}`);
+                      setPickedId(null);
+                    }}
+                  >
+                    Agregar {formatMoney(packPrice(picked, pickUnit) * pickQty)}
+                  </button>
+                </div>
               </div>
             </div>
           ) : null}

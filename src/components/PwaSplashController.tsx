@@ -46,7 +46,7 @@ export function PwaSplashController() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icons/icon-192.png" alt="" width={72} height={72} />
       </div>
-      <p className="pwa-boot-splash__name">MI BARRIO</p>
+      <p className="pwa-boot-splash__name">FARMACIA</p>
     </div>,
     document.body,
   );

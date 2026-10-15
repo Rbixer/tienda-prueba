@@ -9,8 +9,21 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { SESSION_KEY, createInitialData, uid, getCostPrice, normalizePdfStyle } from "@/lib/store";
-import { applyCheckout } from "@/lib/checkout";
+import { SESSION_KEY, createInitialData, uid, getCostPrice, isCashDayClosed, isCashFloatLocked, normalizePdfStyle } from "@/lib/store";
+import {
+  applyCheckout,
+  returnSaleLine,
+  voidSale,
+  type CheckoutMeta,
+  type CheckoutPayment,
+} from "@/lib/checkout";
+import { addIncomingLot, commitSaleItem, ensureLots, readSalePacks, reflectLots } from "@/lib/stock";
+import {
+  normalizePharmacy,
+  pharmacyFields,
+  validatePharmacy,
+  type PharmacyDetails,
+} from "@/lib/pharmacy";
 import {
   clearPendingAfterSync,
   discardOfflineSale as discardOfflineSaleStorage,
@@ -47,9 +60,12 @@ import {
   writeLocalStore,
 } from "@/lib/sync";
 import type {
+  CashShift,
   CompanySettings,
   Permission,
   Product,
+  PurchaseOrder,
+  PurchaseOrderItem,
   Sale,
   SaleItem,
   Session,
@@ -78,21 +94,27 @@ type AuthContextValue = {
   login: (username: string, password: string) => Promise<string | null>;
   logout: () => void;
   setActiveBranch: (branchId: string) => void;
-  createBranch: (input: { name: string; address: string }) => string | null;
-  updateBranch: (
-    id: string,
-    input: { name?: string; address?: string },
+  addProduct: (
+    input: {
+      name: string;
+      price: number;
+      costPrice: number;
+      quantity: number;
+      barcode?: string;
+      image?: string;
+      branchId?: string;
+      minStock?: number;
+      unitsPerBox?: number;
+      unitPrice?: number;
+      unitsPerBlister?: number;
+      blisterPrice?: number;
+      controlled?: boolean;
+    } & PharmacyDetails,
   ) => string | null;
-  deleteBranch: (id: string) => string | null;
-  addProduct: (input: {
-    name: string;
-    price: number;
-    costPrice: number;
-    quantity: number;
-    barcode?: string;
-    image?: string;
-    branchId?: string;
-  }) => string | null;
+  addLot: (
+    productId: string,
+    input: { lot: string; expiresAt?: string; quantity: number; costPrice?: number },
+  ) => string | null;
   updateProduct: (
     id: string,
     input: {
@@ -102,8 +124,14 @@ type AuthContextValue = {
       quantity: number;
       barcode?: string;
       image?: string;
-    },
-  ) => string | null;
+      minStock?: number;
+        unitsPerBox?: number;
+        unitPrice?: number;
+        unitsPerBlister?: number;
+        blisterPrice?: number;
+        controlled?: boolean;
+      } & PharmacyDetails,
+    ) => string | null;
   deleteProduct: (id: string) => void;
   createUser: (input: {
     name: string;
@@ -126,11 +154,27 @@ type AuthContextValue = {
     },
   ) => string | null;
   deleteUser: (id: string) => string | null;
-  checkout: (items: SaleItem[]) => {
+  checkout: (
+    items: SaleItem[],
+    payment?: CheckoutPayment,
+    meta?: CheckoutMeta,
+  ) => {
     error: string | null;
     sale?: Sale;
     offline?: boolean;
+    invoice?: import("@/lib/types").Invoice;
   };
+  voidSale: (saleId: string) => string | null;
+  returnSaleLine: (saleId: string, lineIndex: number) => string | null;
+  openShift: (openingAmount: number) => string | null;
+  closeShift: (countedCash?: number, note?: string) => string | null;
+  createPurchaseOrder: (input: {
+    supplierId: string;
+    note?: string;
+    items: PurchaseOrderItem[];
+  }) => string | null;
+  receivePurchaseOrder: (id: string) => string | null;
+  cancelPurchaseOrder: (id: string) => string | null;
   transferStock: (input: {
     fromBranchId: string;
     toBranchId: string;
@@ -144,15 +188,19 @@ type AuthContextValue = {
     phone?: string;
     logo?: string | null;
     pdfStyle?: import("@/lib/types").PdfStyleSettings;
+    nit?: string;
+    invoiceSeries?: string;
+    cashFloatMode?: "fija" | "libre";
+    cashFloat?: number;
   }) => string | null;
   importProducts: (
-    rows: {
+    rows: ({
       name: string;
       quantity: number;
       costPrice: number;
       price: number;
       barcode?: string;
-    }[],
+    } & PharmacyDetails)[],
   ) => { error: string | null; created: number; updated: number };
   createSupplier: (input: {
     name: string;
@@ -710,99 +758,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [data.branches, persistSession, session],
   );
 
-  const createBranch = useCallback(
-    (input: { name: string; address: string }) => {
-      if (!session || !hasPermission(session, "sucursales")) {
-        return "No tienes permiso para administrar sucursales.";
-      }
-      const name = input.name.trim();
-      const address = input.address.trim();
-      if (!name) return "El nombre de la sucursal es obligatorio.";
-      if (!address) return "La dirección es obligatoria.";
-      if (
-        data.branches.some(
-          (b) => !b.isWarehouse && b.name.toLowerCase() === name.toLowerCase(),
-        )
-      ) {
-        return "Ya existe una sucursal con ese nombre.";
-      }
-      const branch = {
-        id: uid("suc"),
-        name,
-        address,
-      };
-      persist({ ...data, branches: [...data.branches, branch] });
-      return null;
-    },
-    [data, persist, session],
-  );
-
-  const updateBranch = useCallback(
-    (id: string, input: { name?: string; address?: string }) => {
-      if (!session || !hasPermission(session, "sucursales")) {
-        return "No tienes permiso para administrar sucursales.";
-      }
-      const idx = data.branches.findIndex((b) => b.id === id);
-      if (idx < 0) return "Sucursal no encontrada.";
-      const current = data.branches[idx];
-      if (current.isWarehouse) {
-        return "La Bodega Central no se edita desde aquí.";
-      }
-      const name = input.name?.trim() ?? current.name;
-      const address = input.address?.trim() ?? current.address;
-      if (!name) return "El nombre de la sucursal es obligatorio.";
-      if (!address) return "La dirección es obligatoria.";
-      if (
-        data.branches.some(
-          (b) =>
-            b.id !== id &&
-            !b.isWarehouse &&
-            b.name.toLowerCase() === name.toLowerCase(),
-        )
-      ) {
-        return "Ya existe una sucursal con ese nombre.";
-      }
-      const branches = [...data.branches];
-      branches[idx] = { ...current, name, address };
-      persist({ ...data, branches });
-      return null;
-    },
-    [data, persist, session],
-  );
-
-  const deleteBranch = useCallback(
-    (id: string) => {
-      if (!session || !hasPermission(session, "sucursales")) {
-        return "No tienes permiso para administrar sucursales.";
-      }
-      const target = data.branches.find((b) => b.id === id);
-      if (!target) return "Sucursal no encontrada.";
-      if (target.isWarehouse) return "No se puede eliminar la Bodega Central.";
-      const stores = data.branches.filter((b) => !b.isWarehouse);
-      if (stores.length <= 1) {
-        return "Debe quedar al menos una sucursal de venta.";
-      }
-      if (data.products.some((p) => p.branchId === id && p.quantity > 0)) {
-        return "Trasladá o vaciá el inventario antes de eliminar la sucursal.";
-      }
-      if (data.users.some((u) => u.branchId === id)) {
-        return "Hay usuarios con esta sucursal como principal. Reasignalos primero.";
-      }
-      if (session.branchId === id) {
-        return "Cambia a otra sucursal activa antes de eliminarla.";
-      }
-      const branches = data.branches.filter((b) => b.id !== id);
-      const products = data.products.filter((p) => p.branchId !== id);
-      const users = data.users.map((u) => ({
-        ...u,
-        allowedBranchIds: (u.allowedBranchIds ?? []).filter((bid) => bid !== id),
-      }));
-      persist({ ...data, branches, products, users });
-      return null;
-    },
-    [data, persist, session],
-  );
-
   const addProduct = useCallback(
     (input: {
       name: string;
@@ -812,7 +767,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       barcode?: string;
       image?: string;
       branchId?: string;
-    }) => {
+      minStock?: number;
+      unitsPerBox?: number;
+      unitPrice?: number;
+      unitsPerBlister?: number;
+      blisterPrice?: number;
+      controlled?: boolean;
+    } & PharmacyDetails) => {
       if (!session) return "Sesión no válida.";
       if (!hasPermission(session, "inventario")) {
         return "No tienes permiso para gestionar inventario.";
@@ -822,10 +783,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!name) return "El nombre es obligatorio.";
       if (!input.image) return "La fotografía del producto es obligatoria.";
       if (!barcode) return "El código de barras es obligatorio.";
+      const clinical = validatePharmacy(input, { strict: true });
+      if (clinical) return clinical;
       if (input.price < 0) return "El precio de venta no puede ser negativo.";
       if (input.costPrice < 0)
         return "El precio de costo no puede ser negativo.";
       if (input.quantity < 0) return "La cantidad no puede ser negativa.";
+      const packs = readSalePacks(input);
+      if (packs.error) return packs.error;
+      const details = normalizePharmacy(input);
       const branchId = input.branchId ?? session.branchId;
       if (
         barcode &&
@@ -833,10 +799,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           (p) => p.branchId === branchId && p.barcode === barcode,
         )
       ) {
-        return "Ese código de barras ya está registrado en esta sucursal.";
+        return "Ese código de barras ya está registrado.";
       }
       const now = new Date().toISOString();
-      const product: Product = {
+      const product = ensureLots({
         id: uid("prod"),
         name,
         price: Number(input.price),
@@ -844,10 +810,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         quantity: Math.floor(input.quantity),
         barcode,
         image: input.image,
+        ...details,
+        minStock:
+          input.minStock !== undefined ? Math.max(0, Math.floor(input.minStock)) : 5,
+        unitsPerBox: packs.unitsPerBox,
+        unitPrice: packs.unitPrice,
+        unitsPerBlister: packs.unitsPerBlister,
+        blisterPrice: packs.blisterPrice,
+        controlled: Boolean(input.controlled),
+        lots: [
+          {
+            id: uid("lot"),
+            lot: details.lot || "INICIAL",
+            expiresAt: details.expiresAt,
+            quantity: Math.floor(input.quantity),
+            looseUnits: 0,
+            costPrice: Number(input.costPrice),
+          },
+        ],
         branchId,
         createdAt: now,
         updatedAt: now,
-      };
+      });
       persist({ ...data, products: [product, ...data.products] });
       return null;
     },
@@ -863,7 +847,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         quantity: number;
         barcode?: string;
         image?: string;
-      },
+        minStock?: number;
+        unitsPerBox?: number;
+        unitPrice?: number;
+        unitsPerBlister?: number;
+        blisterPrice?: number;
+        controlled?: boolean;
+      } & PharmacyDetails,
     ) => {
       if (!session || !hasPermission(session, "inventario")) {
         return "No tienes permiso para gestionar inventario.";
@@ -880,6 +870,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const image = input.image ?? current.image;
       if (!image) return "La fotografía del producto es obligatoria.";
       if (!barcode) return "El código de barras es obligatorio.";
+      const clinical = validatePharmacy(input, { strict: true });
+      if (clinical) return clinical;
+      const packs = readSalePacks(input);
+      if (packs.error) return packs.error;
+      const details = normalizePharmacy(input);
       if (
         barcode &&
         data.products.some(
@@ -889,23 +884,101 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             p.barcode === barcode,
         )
       ) {
-        return "Ese código de barras ya está registrado en esta sucursal.";
+        return "Ese código de barras ya está registrado.";
+      }
+      const qty = Math.floor(input.quantity);
+      const lots = ensureLots(current).lots ?? [];
+      const extras = {
+        minStock:
+          input.minStock !== undefined
+            ? Math.max(0, Math.floor(input.minStock))
+            : current.minStock,
+        unitsPerBox: packs.unitsPerBox,
+        unitPrice: packs.unitPrice,
+        unitsPerBlister: packs.unitsPerBlister,
+        blisterPrice: packs.blisterPrice,
+        controlled: Boolean(input.controlled),
+      };
+      let next: Product = {
+        ...current,
+        name,
+        price: Number(input.price),
+        costPrice: Number(input.costPrice),
+        barcode,
+        image,
+        ...details,
+        ...extras,
+      };
+      if (lots.length <= 1) {
+        next = reflectLots(next, [
+          {
+            ...(lots[0] ?? {
+              id: uid("lot"),
+              lot: details.lot || "INICIAL",
+              costPrice: Number(input.costPrice),
+            }),
+            lot: details.lot || lots[0]?.lot || "INICIAL",
+            expiresAt: details.expiresAt,
+            quantity: qty,
+            costPrice: Number(input.costPrice),
+          },
+        ]);
+      } else if (qty > current.quantity) {
+        next = addIncomingLot(
+          { ...next, lots },
+          {
+            id: uid("lot"),
+            lot: details.lot || `LOTE-${Date.now().toString(36).toUpperCase()}`,
+            expiresAt: details.expiresAt,
+            quantity: qty - current.quantity,
+            costPrice: Number(input.costPrice),
+          },
+        );
+      } else if (qty < current.quantity) {
+        return "Con varios lotes el stock se ajusta vendiendo o agregando un lote.";
+      } else {
+        next = reflectLots(next, lots);
       }
       persist({
         ...data,
         products: data.products.map((p) =>
-          p.id === id
-            ? {
-                ...p,
-                name,
-                price: Number(input.price),
-                costPrice: Number(input.costPrice),
-                quantity: Math.floor(input.quantity),
-                barcode,
-                image,
-                updatedAt: new Date().toISOString(),
-              }
-            : p,
+          p.id === id ? { ...next, updatedAt: new Date().toISOString() } : p,
+        ),
+      });
+      return null;
+    },
+    [data, persist, session],
+  );
+  const addLot = useCallback(
+    (
+      productId: string,
+      input: { lot: string; expiresAt?: string; quantity: number; costPrice?: number },
+    ) => {
+      if (!session || !hasPermission(session, "inventario")) {
+        return "No tienes permiso para gestionar inventario.";
+      }
+      const current = data.products.find((p) => p.id === productId);
+      if (!current) return "Producto no encontrado.";
+      const lot = input.lot.trim();
+      if (!lot) return "El lote es obligatorio.";
+      const quantity = Math.floor(input.quantity);
+      if (quantity <= 0) return "La cantidad del lote debe ser mayor a 0.";
+      const clinical = validatePharmacy(
+        { ...current, lot, expiresAt: input.expiresAt },
+        { strict: true },
+      );
+      if (clinical) return clinical;
+      const next = addIncomingLot(current, {
+        id: uid("lot"),
+        lot,
+        expiresAt: input.expiresAt,
+        quantity,
+        costPrice: input.costPrice ?? current.costPrice,
+      });
+      persist({
+        ...data,
+        products: data.products.map((p) =>
+          p.id === productId ? { ...next, updatedAt: new Date().toISOString() } : p,
         ),
       });
       return null;
@@ -947,7 +1020,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return "Ese usuario ya existe.";
       }
       if (!data.branches.some((b) => b.id === input.branchId && !b.isWarehouse)) {
-        return "Sucursal no válida.";
+        return "No se pudo asignar el punto de venta.";
       }
       if (
         input.role === "administrador" &&
@@ -962,13 +1035,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         (id) => storeIds.has(id),
       );
       if (input.role !== "administrador" && allowedRaw.length === 0) {
-        return "Selecciona al menos una tienda visible.";
+        return "No se pudo asignar el punto de venta.";
       }
       if (
         input.role !== "administrador" &&
         !allowedRaw.includes(input.branchId)
       ) {
-        return "La sucursal principal debe estar entre las tiendas visibles.";
+        return "No se pudo asignar el punto de venta.";
       }
       const permissions = normalizePermissions(
         input.role,
@@ -1023,7 +1096,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const nextBranchId = input.branchId ?? current.branchId;
       if (!data.branches.some((b) => b.id === nextBranchId && !b.isWarehouse)) {
-        return "Sucursal no válida.";
+        return "No se pudo asignar el punto de venta.";
       }
       const storeIds = new Set(
         data.branches.filter((b) => !b.isWarehouse).map((b) => b.id),
@@ -1034,13 +1107,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         [nextBranchId]
       ).filter((bid) => storeIds.has(bid));
       if (nextRole !== "administrador" && allowedRaw.length === 0) {
-        return "Selecciona al menos una tienda visible.";
+        return "No se pudo asignar el punto de venta.";
       }
       if (
         nextRole !== "administrador" &&
         !allowedRaw.includes(nextBranchId)
       ) {
-        return "La sucursal principal debe estar entre las tiendas visibles.";
+        return "No se pudo asignar el punto de venta.";
       }
       if (
         input.password &&
@@ -1104,8 +1177,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [data, persist, session],
   );
   const checkout = useCallback(
-    (items: SaleItem[]) => {
-      const result = applyCheckout(data, session, items);
+    (items: SaleItem[], payment?: CheckoutPayment, meta?: CheckoutMeta) => {
+      const openShiftId = (data.cashShifts ?? []).find(
+        (shift) => shift.branchId === session?.branchId && !shift.closedAt,
+      )?.id;
+      const result = applyCheckout(data, session, items, payment, {
+        ...meta,
+        shiftId: meta?.shiftId ?? openShiftId,
+      });
       if (result.error || !result.store || !result.sale) {
         return { error: result.error ?? "No se pudo cobrar." };
       }
@@ -1113,7 +1192,278 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       persist(result.store, {
         offlineSale: result.sale,
       });
-      return { error: null, sale: result.sale, offline };
+      return {
+        error: null,
+        sale: result.sale,
+        offline,
+        invoice: result.store.invoices?.find(
+          (item) => item.id === result.sale?.invoiceId,
+        ),
+      };
+    },
+    [data, persist, session],
+  );
+
+  const voidSaleById = useCallback(
+    (saleId: string) => {
+      if (!session || !hasPermission(session, "pos")) {
+        return "No tienes permiso para anular ventas.";
+      }
+      const result = voidSale(data, saleId);
+      if (result.error || !result.store) return result.error ?? "No se pudo anular.";
+      persist(result.store);
+      return null;
+    },
+    [data, persist, session],
+  );
+
+  const returnLine = useCallback(
+    (saleId: string, lineIndex: number) => {
+      if (!session || !hasPermission(session, "pos")) {
+        return "No tienes permiso para devolver ventas.";
+      }
+      const result = returnSaleLine(data, saleId, lineIndex);
+      if (result.error || !result.store) return result.error ?? "No se pudo devolver.";
+      persist(result.store);
+      return null;
+    },
+    [data, persist, session],
+  );
+
+  const openShift = useCallback(
+    (openingAmount: number) => {
+      if (!session || !hasPermission(session, "pos")) {
+        return "No tienes permiso para abrir caja.";
+      }
+      if (!Number.isFinite(openingAmount) || openingAmount < 0) {
+        return "El fondo inicial no es válido.";
+      }
+      const shifts = data.cashShifts ?? [];
+      if (shifts.some((shift) => shift.branchId === session.branchId && !shift.closedAt)) {
+        return "Ya hay un turno de caja abierto.";
+      }
+      if (isCashDayClosed(shifts, session.branchId)) {
+        return "El día ya se cerró. La caja se apertura mañana.";
+      }
+      const locked = isCashFloatLocked(data.settings);
+      const storedBase = data.settings.cashFloat;
+      if (locked && typeof storedBase !== "number") {
+        return "La cuota fija no está definida. Configúrala en Configuración.";
+      }
+      const opening = locked
+        ? storedBase!
+        : Math.round(openingAmount * 100) / 100;
+      const shift: CashShift = {
+        id: uid("shift"),
+        branchId: session.branchId,
+        userId: session.userId,
+        userName: session.name,
+        openingAmount: opening,
+        openedAt: new Date().toISOString(),
+      };
+      persist({
+        ...data,
+        cashShifts: [shift, ...shifts],
+      });
+      return null;
+    },
+    [data, persist, session],
+  );
+
+  const closeShift = useCallback(
+    (countedCash?: number, note?: string) => {
+      if (!session || !hasPermission(session, "pos")) {
+        return "No tienes permiso para cerrar caja.";
+      }
+      if (
+        countedCash !== undefined &&
+        (!Number.isFinite(countedCash) || countedCash < 0)
+      ) {
+        return "El efectivo contado no es válido.";
+      }
+      const shifts = data.cashShifts ?? [];
+      const current = shifts.find(
+        (shift) => shift.branchId === session.branchId && !shift.closedAt,
+      );
+      if (!current) return "No hay un turno abierto.";
+      const sales = data.sales.filter(
+        (sale) =>
+          sale.shiftId === current.id &&
+          sale.status !== "anulada",
+      );
+      const sum = (method: "efectivo" | "tarjeta" | "transferencia") =>
+        Math.round(
+          sales
+            .filter((sale) => (sale.paymentMethod ?? "efectivo") === method)
+            .reduce((total, sale) => total + sale.total, 0) * 100,
+        ) / 100;
+      const cashSales = sum("efectivo");
+      const capital = Math.round(current.openingAmount * 100) / 100;
+      const expectedCash = Math.round((capital + cashSales) * 100) / 100;
+      const counted =
+        countedCash === undefined
+          ? expectedCash
+          : Math.round(countedCash * 100) / 100;
+      const now = new Date().toISOString();
+      const closed: CashShift = {
+        ...current,
+        closedAt: now,
+        countedCash: counted,
+        expectedCash,
+        difference: Math.round((counted - expectedCash) * 100) / 100,
+        cashSales,
+        cardTotal: sum("tarjeta"),
+        transferTotal: sum("transferencia"),
+        note: note?.trim() || undefined,
+      };
+      persist({
+        ...data,
+        cashShifts: shifts.map((shift) => (shift.id === current.id ? closed : shift)),
+      });
+      return null;
+    },
+    [data, persist, session],
+  );
+
+  const createPurchaseOrder = useCallback(
+    (input: { supplierId: string; note?: string; items: PurchaseOrderItem[] }) => {
+      if (!session || !hasPermission(session, "proveedores")) {
+        return "No tienes permiso para hacer pedidos.";
+      }
+      if (!data.suppliers.some((supplier) => supplier.id === input.supplierId)) {
+        return "Proveedor no encontrado.";
+      }
+      if (!input.items.length) return "Agrega al menos un producto al pedido.";
+      for (const item of input.items) {
+        if (!item.name.trim()) return "Cada línea necesita nombre.";
+        if (!item.lot.trim()) return `Indica el lote de ${item.name}.`;
+        if (item.quantity <= 0) return `Cantidad inválida de ${item.name}.`;
+        if (item.costPrice < 0 || item.price < 0) return "Los precios no pueden ser negativos.";
+      }
+      const order: PurchaseOrder = {
+        id: uid("po"),
+        supplierId: input.supplierId,
+        status: "pedido",
+        note: input.note?.trim() || undefined,
+        items: input.items.map((item) => ({
+          ...item,
+          name: item.name.trim(),
+          lot: item.lot.trim(),
+          quantity: Math.floor(item.quantity),
+        })),
+        createdAt: new Date().toISOString(),
+      };
+      persist({
+        ...data,
+        purchaseOrders: [order, ...(data.purchaseOrders ?? [])],
+      });
+      return null;
+    },
+    [data, persist, session],
+  );
+
+  const receivePurchaseOrder = useCallback(
+    (id: string) => {
+      if (!session || !hasPermission(session, "proveedores")) {
+        return "No tienes permiso para recibir pedidos.";
+      }
+      const order = (data.purchaseOrders ?? []).find((item) => item.id === id);
+      if (!order) return "Pedido no encontrado.";
+      if (order.status !== "pedido") return "Ese pedido ya no está pendiente.";
+      const branchId = session.branchId;
+      let products = [...data.products];
+      const now = new Date().toISOString();
+      let debt = 0;
+      for (const item of order.items) {
+        debt += item.quantity * item.costPrice;
+        const barcode = item.barcode?.trim();
+        let idx = barcode
+          ? products.findIndex((p) => p.branchId === branchId && p.barcode === barcode)
+          : -1;
+        if (idx < 0) {
+          idx = products.findIndex(
+            (p) => p.branchId === branchId && p.name.toLowerCase() === item.name.toLowerCase(),
+          );
+        }
+        if (idx >= 0) {
+          products[idx] = {
+            ...addIncomingLot(products[idx], {
+              id: uid("lot"),
+              lot: item.lot,
+              expiresAt: item.expiresAt,
+              quantity: item.quantity,
+              costPrice: item.costPrice,
+            }),
+            price: item.price || products[idx].price,
+            updatedAt: now,
+          };
+        } else {
+          products = [
+            ensureLots({
+              id: uid("prod"),
+              name: item.name.trim(),
+              price: item.price,
+              costPrice: item.costPrice,
+              quantity: item.quantity,
+              barcode,
+              genericName: item.genericName,
+              presentation: item.presentation,
+              lot: item.lot,
+              expiresAt: item.expiresAt,
+              lots: [
+                {
+                  id: uid("lot"),
+                  lot: item.lot,
+                  expiresAt: item.expiresAt,
+                  quantity: item.quantity,
+                  looseUnits: 0,
+                  costPrice: item.costPrice,
+                },
+              ],
+              branchId,
+              createdAt: now,
+              updatedAt: now,
+            }),
+            ...products,
+          ];
+        }
+      }
+      persist({
+        ...data,
+        products,
+        purchaseOrders: (data.purchaseOrders ?? []).map((item) =>
+          item.id === id ? { ...item, status: "recibido" as const, receivedAt: now } : item,
+        ),
+        suppliers: data.suppliers.map((supplier) =>
+          supplier.id === order.supplierId
+            ? {
+                ...supplier,
+                balance: Math.round((supplier.balance + debt) * 100) / 100,
+                updatedAt: now,
+              }
+            : supplier,
+        ),
+      });
+      return null;
+    },
+    [data, persist, session],
+  );
+
+  const cancelPurchaseOrder = useCallback(
+    (id: string) => {
+      if (!session || !hasPermission(session, "proveedores")) {
+        return "No tienes permiso para cancelar pedidos.";
+      }
+      const order = (data.purchaseOrders ?? []).find((item) => item.id === id);
+      if (!order) return "Pedido no encontrado.";
+      if (order.status !== "pedido") return "Solo se cancela un pedido pendiente.";
+      persist({
+        ...data,
+        purchaseOrders: (data.purchaseOrders ?? []).map((item) =>
+          item.id === id ? { ...item, status: "cancelado" as const } : item,
+        ),
+      });
+      return null;
     },
     [data, persist, session],
   );
@@ -1134,9 +1484,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!input.items.length) return "Agrega al menos un producto.";
       const fromOk = data.branches.some((b) => b.id === input.fromBranchId);
       const toBranch = data.branches.find((b) => b.id === input.toBranchId);
-      if (!fromOk || !toBranch) return "Sucursal o bodega no válida.";
+      if (!fromOk || !toBranch) return "Origen o destino no válido.";
       if (toBranch.isWarehouse) {
-        return "La Bodega Central solo envía traslados a sucursales.";
+        return "La bodega solo envía traslados a la farmacia.";
       }
 
       let products = [...data.products];
@@ -1152,14 +1502,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (src.branchId !== input.fromBranchId) {
           return `El producto ${src.name} no pertenece al origen.`;
         }
-        if (src.quantity < qty) {
-          return `Stock insuficiente de ${src.name} (disponible ${src.quantity}).`;
+        const taken = commitSaleItem(src, {
+          productId: src.id,
+          name: src.name,
+          price: src.price,
+          quantity: qty,
+        });
+        if (taken.error || !taken.item.allocations) {
+          return taken.error ?? `Stock insuficiente de ${src.name}.`;
         }
-        products[srcIdx] = {
-          ...src,
-          quantity: src.quantity - qty,
-          updatedAt: now,
-        };
+        products[srcIdx] = { ...taken.product, updatedAt: now };
+        const moved = taken.item.allocations;
 
         const barcode = src.barcode?.trim();
         let destIdx = -1;
@@ -1176,29 +1529,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           );
         }
 
+        const receiveLots = (base: Product): Product => {
+          let next = base;
+          for (const line of moved) {
+            if (line.boxes <= 0) continue;
+            next = addIncomingLot(next, {
+              id: uid("lot"),
+              lot: line.lot || "TRASLADO",
+              expiresAt: line.expiresAt,
+              quantity: line.boxes,
+              costPrice: getCostPrice(src),
+            });
+          }
+          return { ...next, updatedAt: now };
+        };
         if (destIdx >= 0) {
-          products[destIdx] = {
+          products[destIdx] = receiveLots({
             ...products[destIdx],
-            quantity: products[destIdx].quantity + qty,
             costPrice: getCostPrice(src),
             price: src.price,
             image: src.image ?? products[destIdx].image,
-            updatedAt: now,
-          };
+            ...pharmacyFields(src),
+            controlled: src.controlled,
+            minStock: src.minStock,
+            unitsPerBox: src.unitsPerBox,
+            unitPrice: src.unitPrice,
+            unitsPerBlister: src.unitsPerBlister,
+            blisterPrice: src.blisterPrice,
+          });
         } else {
           products = [
-            {
+            receiveLots({
               id: uid("prod"),
               name: src.name,
               price: src.price,
               costPrice: getCostPrice(src),
-              quantity: qty,
+              quantity: 0,
               barcode: src.barcode,
               image: src.image,
+              ...pharmacyFields(src),
+              controlled: src.controlled,
+              minStock: src.minStock,
+              unitsPerBox: src.unitsPerBox,
+              unitPrice: src.unitPrice,
+              unitsPerBlister: src.unitsPerBlister,
+              blisterPrice: src.blisterPrice,
               branchId: input.toBranchId,
               createdAt: now,
               updatedAt: now,
-            },
+            }),
             ...products,
           ];
         }
@@ -1243,6 +1622,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       phone?: string;
       logo?: string | null;
       pdfStyle?: CompanySettings["pdfStyle"];
+      nit?: string;
+      invoiceSeries?: string;
+      cashFloatMode?: "fija" | "libre";
+      cashFloat?: number;
     }) => {
       if (!session || !hasPermission(session, "configuracion")) {
         return "No tienes permiso para cambiar la configuración.";
@@ -1251,7 +1634,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         input.companyName !== undefined
           ? input.companyName.trim()
           : data.settings.companyName;
-      if (!nextName) return "El nombre de la empresa es obligatorio.";
       const nextSlogan =
         input.slogan !== undefined
           ? input.slogan.trim()
@@ -1262,11 +1644,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           : data.settings.address;
       const nextPhone =
         input.phone !== undefined ? input.phone.trim() : data.settings.phone;
+      let cashFloatMode = data.settings.cashFloatMode;
+      let cashFloat = data.settings.cashFloat;
+      if (input.cashFloatMode === "libre") {
+        cashFloatMode = "libre";
+      } else if (input.cashFloatMode === "fija") {
+        if (
+          typeof input.cashFloat !== "number" ||
+          !Number.isFinite(input.cashFloat) ||
+          input.cashFloat < 0
+        ) {
+          return "La cuota fija no es válida.";
+        }
+        cashFloatMode = "fija";
+        cashFloat = Math.round(input.cashFloat * 100) / 100;
+      }
       const settings: CompanySettings = {
+        ...data.settings,
         companyName: nextName,
-        slogan: nextSlogan || undefined,
+        slogan: nextSlogan ?? "",
         address: nextAddress || undefined,
         phone: nextPhone || undefined,
+        nit:
+          input.nit !== undefined
+            ? input.nit.trim() || undefined
+            : data.settings.nit,
+        invoiceSeries:
+          input.invoiceSeries !== undefined
+            ? input.invoiceSeries.trim()
+            : data.settings.invoiceSeries,
         logo:
           input.logo === null
             ? undefined
@@ -1276,6 +1682,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pdfStyle: normalizePdfStyle(
           input.pdfStyle ?? data.settings.pdfStyle,
         ),
+        cashFloatMode,
+        cashFloat,
       };
       persist({ ...data, settings });
       return null;
@@ -1285,13 +1693,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const importProducts = useCallback(
     (
-      rows: {
+      rows: ({
         name: string;
         quantity: number;
         costPrice: number;
         price: number;
         barcode?: string;
-      }[],
+      } & PharmacyDetails)[],
     ) => {
       if (!session) {
         return { error: "Sesión no válida.", created: 0, updated: 0 };
@@ -1360,30 +1768,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           );
         }
 
+        const details = normalizePharmacy(row);
+        const clinical = validatePharmacy(row);
+        if (clinical) {
+          return {
+            error: `Fila ${i + 1}: ${clinical}`,
+            created: 0,
+            updated: 0,
+          };
+        }
         if (idx >= 0) {
-          products[idx] = {
+          const base: Product = {
             ...products[idx],
             name,
             price: Number(row.price),
             costPrice: Number(row.costPrice),
-            quantity: products[idx].quantity + Math.floor(row.quantity),
             barcode: products[idx].barcode || barcode,
+            ...details,
+            category: details.category ?? products[idx].category,
+            genericName: details.genericName ?? products[idx].genericName,
+            presentation: details.presentation ?? products[idx].presentation,
+            concentration: details.concentration ?? products[idx].concentration,
+            laboratory: details.laboratory ?? products[idx].laboratory,
+            requiresPrescription: row.requiresPrescription
+              ? details.requiresPrescription
+              : products[idx].requiresPrescription,
+          };
+          products[idx] = {
+            ...addIncomingLot(base, {
+              id: uid("lot"),
+              lot: details.lot || `IMP-${i + 1}`,
+              expiresAt: details.expiresAt,
+              quantity: Math.floor(row.quantity),
+              costPrice: Number(row.costPrice),
+            }),
             updatedAt: now,
           };
           updated += 1;
         } else {
           products = [
-            {
+            ensureLots({
               id: uid("prod"),
               name,
               price: Number(row.price),
               costPrice: Number(row.costPrice),
               quantity: Math.floor(row.quantity),
               barcode,
+              ...details,
+              lots: [
+                {
+                  id: uid("lot"),
+                  lot: details.lot || "INICIAL",
+                  expiresAt: details.expiresAt,
+                  quantity: Math.floor(row.quantity),
+                  looseUnits: 0,
+                  costPrice: Number(row.costPrice),
+                },
+              ],
               branchId,
               createdAt: now,
               updatedAt: now,
-            },
+            }),
             ...products,
           ];
           created += 1;
@@ -1591,7 +2036,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const currentBranchName = useMemo(() => {
     if (!session) return "";
     return (
-      data.branches.find((b) => b.id === session.branchId)?.name ?? "Sucursal"
+      data.branches.find((b) => b.id === session.branchId)?.name ?? "Farmacia"
     );
   }, [data.branches, session]);
   const storeBranches = useMemo(
@@ -1627,16 +2072,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       setActiveBranch,
-      createBranch,
-      updateBranch,
-      deleteBranch,
       addProduct,
+      addLot,
       updateProduct,
       deleteProduct,
       createUser,
       updateUser,
       deleteUser,
       checkout,
+      voidSale: voidSaleById,
+      returnSaleLine: returnLine,
+      openShift,
+      closeShift,
+      createPurchaseOrder,
+      receivePurchaseOrder,
+      cancelPurchaseOrder,
       transferStock,
       updateSettings,
       importProducts,
@@ -1667,16 +2117,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       setActiveBranch,
-      createBranch,
-      updateBranch,
-      deleteBranch,
       addProduct,
+      addLot,
       updateProduct,
       deleteProduct,
       createUser,
       updateUser,
       deleteUser,
       checkout,
+      voidSaleById,
+      returnLine,
+      openShift,
+      closeShift,
+      createPurchaseOrder,
+      receivePurchaseOrder,
+      cancelPurchaseOrder,
       transferStock,
       updateSettings,
       importProducts,

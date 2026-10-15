@@ -8,7 +8,6 @@ export type Permission =
   | "reportes"
   | "bodega"
   | "proveedores"
-  | "sucursales"
   | "usuarios"
   | "configuracion";
 
@@ -16,7 +15,7 @@ export type Branch = {
   id: string;
   name: string;
   address: string;
-  /** Si true, es la bodega central (no es tienda de venta) */
+  /** Si true, es la bodega. Desde aquí no se cobra. */
   isWarehouse?: boolean;
 };
 
@@ -26,7 +25,7 @@ export type User = {
   username: string;
   password: string;
   role: Role;
-  /** Sucursal principal / por defecto */
+  /** Punto de venta asignado */
   branchId: string;
   /**
    * Tiendas que el usuario puede ver/operar.
@@ -36,6 +35,16 @@ export type User = {
   /** Módulos a los que puede acceder (admin siempre tiene todos) */
   permissions: Permission[];
 };
+
+export type PharmacyCategory =
+  | "medicamento"
+  | "otc"
+  | "higiene"
+  | "dermocosmetico"
+  | "suplemento"
+  | "material";
+
+export type PaymentMethod = "efectivo" | "tarjeta" | "transferencia";
 
 export type Product = {
   id: string;
@@ -48,9 +57,54 @@ export type Product = {
   /** Código de barras */
   barcode?: string;
   image?: string;
+  /** Principio activo o nombre genérico */
+  genericName?: string;
+  /** Caja, frasco, tubo, blíster… */
+  presentation?: string;
+  /** 500 mg, 250 mg/5 ml… */
+  concentration?: string;
+  laboratory?: string;
+  lot?: string;
+  /** Fecha de vencimiento YYYY-MM-DD del lote que sale primero */
+  expiresAt?: string;
+  requiresPrescription?: boolean;
+  /** Psicotrópico o estupefaciente: exige receta en el mostrador */
+  controlled?: boolean;
+  /** Aviso cuando las cajas bajan de este número */
+  minStock?: number;
+  /** Unidades dentro de una caja (tabletas, ampollas…) */
+  unitsPerBox?: number;
+  /** Precio de una unidad suelta */
+  unitPrice?: number;
+  /** Unidades dentro de un blíster */
+  unitsPerBlister?: number;
+  /** Precio de un blíster */
+  blisterPrice?: number;
+  /** Unidades sueltas, suma de los lotes */
+  looseUnits?: number;
+  lots?: StockLot[];
+  category?: PharmacyCategory;
   branchId: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type StockLot = {
+  id: string;
+  lot: string;
+  expiresAt?: string;
+  /** Cajas o frascos cerrados */
+  quantity: number;
+  looseUnits?: number;
+  costPrice: number;
+};
+
+export type LotAllocation = {
+  lotId: string;
+  lot?: string;
+  expiresAt?: string;
+  boxes: number;
+  units: number;
 };
 
 export type SaleItem = {
@@ -59,6 +113,16 @@ export type SaleItem = {
   price: number;
   quantity: number;
   image?: string;
+  /** Caja cierra el empaque; blíster y unidad descuentan tabletas */
+  saleUnit?: "caja" | "blister" | "unidad";
+  allocations?: LotAllocation[];
+};
+
+export type Prescription = {
+  number: string;
+  doctor: string;
+  patient: string;
+  date: string;
 };
 
 export type Sale = {
@@ -68,7 +132,18 @@ export type Sale = {
   userName: string;
   items: SaleItem[];
   total: number;
+  paymentMethod?: PaymentMethod;
+  amountReceived?: number;
+  change?: number;
+  status?: "completada" | "anulada";
+  customerName?: string;
+  customerPhone?: string;
+  customerNit?: string;
+  prescription?: Prescription;
+  invoiceId?: string;
+  shiftId?: string;
   createdAt: string;
+  voidedAt?: string;
 };
 
 export type TransferItem = {
@@ -148,6 +223,68 @@ export type CompanySettings = {
   logo?: string;
   /** Estilos tipográficos para los PDFs */
   pdfStyle?: PdfStyleSettings;
+  /** NIT del establecimiento, para la factura */
+  nit?: string;
+  invoiceSeries?: string;
+  nextInvoiceNumber?: number;
+  /**
+   * fija: el fondo queda bloqueado y no se cambia al aperturar.
+   * libre: cada día se escribe el monto.
+   */
+  cashFloatMode?: "fija" | "libre";
+  /** Cuota fija de la caja, cuando el modo es fija */
+  cashFloat?: number;
+};
+
+export type PurchaseOrderItem = {
+  name: string;
+  barcode?: string;
+  quantity: number;
+  costPrice: number;
+  price: number;
+  lot: string;
+  expiresAt?: string;
+  genericName?: string;
+  presentation?: string;
+};
+
+export type PurchaseOrder = {
+  id: string;
+  supplierId: string;
+  status: "pedido" | "recibido" | "cancelado";
+  items: PurchaseOrderItem[];
+  note?: string;
+  createdAt: string;
+  receivedAt?: string;
+};
+
+export type CashShift = {
+  id: string;
+  branchId: string;
+  userId: string;
+  userName: string;
+  openingAmount: number;
+  openedAt: string;
+  closedAt?: string;
+  countedCash?: number;
+  expectedCash?: number;
+  difference?: number;
+  cardTotal?: number;
+  transferTotal?: number;
+  cashSales?: number;
+  note?: string;
+};
+
+export type Invoice = {
+  id: string;
+  saleId: string;
+  series: string;
+  number: number;
+  nitEmitter: string;
+  nitReceiver: string;
+  receiverName: string;
+  total: number;
+  createdAt: string;
 };
 
 export type Session = {
@@ -170,5 +307,8 @@ export type StoreData = {
   transfers: Transfer[];
   suppliers: Supplier[];
   supplierPayments: SupplierPayment[];
+  purchaseOrders?: PurchaseOrder[];
+  cashShifts?: CashShift[];
+  invoices?: Invoice[];
   settings: CompanySettings;
 };

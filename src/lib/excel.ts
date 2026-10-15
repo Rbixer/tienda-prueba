@@ -1,5 +1,11 @@
 import type { Product } from "@/lib/types";
 import { getCostPrice } from "@/lib/store";
+import {
+  categoryFromLabel,
+  categoryLabel,
+  parseExpiryDate,
+  type PharmacyDetails,
+} from "@/lib/pharmacy";
 
 export type InventoryExcelRow = {
   name: string;
@@ -7,7 +13,7 @@ export type InventoryExcelRow = {
   costPrice: number;
   price: number;
   barcode?: string;
-};
+} & PharmacyDetails;
 
 const NAME_KEYS = [
   "nombre producto",
@@ -41,6 +47,14 @@ const BARCODE_KEYS = [
   "barra",
   "ean",
 ];
+const GENERIC_KEYS = ["principio activo", "generico", "genérico", "droga"];
+const PRESENTATION_KEYS = ["presentacion", "presentación"];
+const CONCENTRATION_KEYS = ["concentracion", "concentración", "dosis"];
+const LAB_KEYS = ["laboratorio", "lab"];
+const LOT_KEYS = ["lote", "lot", "batch"];
+const EXPIRY_KEYS = ["vencimiento", "vence", "caducidad", "expira"];
+const CATEGORY_KEYS = ["categoria", "categoría"];
+const RX_KEYS = ["receta", "requiere receta"];
 
 function normalizeHeader(value: unknown): string {
   return String(value ?? "")
@@ -67,6 +81,31 @@ function pickKey(headers: string[], candidates: string[]): string | null {
     if (found) return found;
   }
   return null;
+}
+
+function cellText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function excelDate(value: unknown): string | undefined {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${value.getFullYear()}-${month}-${day}`;
+  }
+  if (typeof value === "number" && value > 20_000 && value < 80_000) {
+    const utc = new Date(Date.UTC(1899, 11, 30) + value * 86_400_000);
+    return utc.toISOString().slice(0, 10);
+  }
+  return parseExpiryDate(cellText(value)) ?? undefined;
+}
+
+function excelBool(value: unknown): boolean {
+  const text = cellText(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return ["si", "1", "true", "x", "yes"].includes(text);
 }
 
 function toNumber(value: unknown): number | null {
@@ -148,6 +187,14 @@ export async function parseInventoryExcel(
   const costCol = pickKey(headers, COST_KEYS);
   const priceCol = pickKey(headers, PRICE_KEYS);
   const barcodeCol = pickKey(headers, BARCODE_KEYS);
+  const genericCol = pickKey(headers, GENERIC_KEYS);
+  const presentationCol = pickKey(headers, PRESENTATION_KEYS);
+  const concentrationCol = pickKey(headers, CONCENTRATION_KEYS);
+  const labCol = pickKey(headers, LAB_KEYS);
+  const lotCol = pickKey(headers, LOT_KEYS);
+  const expiryCol = pickKey(headers, EXPIRY_KEYS);
+  const categoryCol = pickKey(headers, CATEGORY_KEYS);
+  const rxCol = pickKey(headers, RX_KEYS);
 
   if (!nameCol || !qtyCol || !costCol || !priceCol) {
     throw new Error(
@@ -160,6 +207,16 @@ export async function parseInventoryExcel(
   const costI = headers.indexOf(costCol);
   const priceI = headers.indexOf(priceCol);
   const barcodeI = barcodeCol ? headers.indexOf(barcodeCol) : -1;
+  const genericI = genericCol ? headers.indexOf(genericCol) : -1;
+  const presentationI = presentationCol ? headers.indexOf(presentationCol) : -1;
+  const concentrationI = concentrationCol
+    ? headers.indexOf(concentrationCol)
+    : -1;
+  const labI = labCol ? headers.indexOf(labCol) : -1;
+  const lotI = lotCol ? headers.indexOf(lotCol) : -1;
+  const expiryI = expiryCol ? headers.indexOf(expiryCol) : -1;
+  const categoryI = categoryCol ? headers.indexOf(categoryCol) : -1;
+  const rxI = rxCol ? headers.indexOf(rxCol) : -1;
 
   const rows: InventoryExcelRow[] = [];
   for (let i = headerIdx + 1; i < matrix.length; i++) {
@@ -186,6 +243,14 @@ export async function parseInventoryExcel(
       barcodeI >= 0
         ? String(line[barcodeI] ?? "").trim() || undefined
         : undefined;
+    const expiresRaw = expiryI >= 0 ? line[expiryI] : "";
+    if (expiryI >= 0 && cellText(expiresRaw) && !excelDate(expiresRaw)) {
+      throw new Error(
+        `Fila ${i + 1}: vencimiento inválido (${name}). Usa AAAA-MM-DD.`,
+      );
+    }
+    const category =
+      categoryI >= 0 ? categoryFromLabel(cellText(line[categoryI])) : undefined;
 
     rows.push({
       name,
@@ -193,6 +258,18 @@ export async function parseInventoryExcel(
       costPrice,
       price,
       barcode,
+      genericName: genericI >= 0 ? cellText(line[genericI]) || undefined : undefined,
+      presentation:
+        presentationI >= 0 ? cellText(line[presentationI]) || undefined : undefined,
+      concentration:
+        concentrationI >= 0
+          ? cellText(line[concentrationI]) || undefined
+          : undefined,
+      laboratory: labI >= 0 ? cellText(line[labI]) || undefined : undefined,
+      lot: lotI >= 0 ? cellText(line[lotI]) || undefined : undefined,
+      expiresAt: expiryI >= 0 ? excelDate(expiresRaw) : undefined,
+      category,
+      requiresPrescription: rxI >= 0 ? excelBool(line[rxI]) : undefined,
     });
   }
 
@@ -214,7 +291,7 @@ export async function downloadInventoryExcel(
   },
 ) {
   const XLSX = await import("xlsx-js-style");
-  const companyName = opts?.companyName?.trim() || "MI BARRIO";
+  const companyName = opts?.companyName?.trim() || "FARMACIA";
   const slogan = opts?.slogan?.trim();
   const address = opts?.address?.trim();
   const phone = opts?.phone?.trim();
@@ -230,6 +307,14 @@ export async function downloadInventoryExcel(
     "Precio costo",
     "Precio venta",
     "Código de barras",
+    "Principio activo",
+    "Presentación",
+    "Concentración",
+    "Laboratorio",
+    "Lote",
+    "Vencimiento",
+    "Categoría",
+    "Receta",
     "Conteo físico",
   ];
 
@@ -240,6 +325,14 @@ export async function downloadInventoryExcel(
     Number(getCostPrice(p).toFixed(2)),
     Number(p.price.toFixed(2)),
     p.barcode ?? "",
+    p.genericName ?? "",
+    p.presentation ?? "",
+    p.concentration ?? "",
+    p.laboratory ?? "",
+    p.lot ?? "",
+    p.expiresAt ?? "",
+    categoryLabel(p.category),
+    p.requiresPrescription ? "Sí" : "",
     "",
   ]);
 
@@ -254,7 +347,6 @@ export async function downloadInventoryExcel(
   headerBlock.push(["Inventario de productos"]);
   const titleExcelRow = headerBlock.length;
   headerBlock.push(
-    [`Ubicación / sucursal: ${branchName}`],
     [`Fecha de emisión: ${new Date().toLocaleString("es-GT")}`],
     [`Productos listados: ${sorted.length}`],
     ["Fuente: módulo Inventario · stock vigente al momento de la descarga"],
@@ -271,19 +363,27 @@ export async function downloadInventoryExcel(
   const headerRowExcel = headerBlock.length + 1; // fila 1-based del encabezado de columnas
   const firstDataRow = headerRowExcel + 1;
   const lastDataRow = Math.max(firstDataRow, headerRowExcel + dataRows.length);
-  const lastColumn = 7;
-  const accent = "0B2545";
-  const accentSoft = "E8EEF5";
-  const stripe = "F4F7FA";
-  const borderColor = "AAB7C4";
+  const lastColumn = headers.length;
+  const accent = "0B3D32";
+  const accentSoft = "E7F5EE";
+  const stripe = "F3F6F4";
+  const borderColor = "C5D6CC";
 
   sheet["!cols"] = [
     { wch: 5 },
-    { wch: 36 },
+    { wch: 32 },
     { wch: 12 },
     { wch: 14 },
     { wch: 14 },
     { wch: 18 },
+    { wch: 22 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 10 },
     { wch: 14 },
   ];
   sheet["!rows"] = aoa.map((_, index) => ({
@@ -306,7 +406,7 @@ export async function downloadInventoryExcel(
     }),
   );
   sheet["!autofilter"] = {
-    ref: `A${headerRowExcel}:G${lastDataRow}`,
+    ref: `A${headerRowExcel}:O${lastDataRow}`,
   };
 
   (sheet as { ["!freeze"]?: unknown })["!freeze"] = {
@@ -413,7 +513,7 @@ export async function downloadInventoryExcel(
       const cell = sheet[`${col}${row}`];
       if (cell) cell.z = '"Q" #,##0.00';
     }
-    const countCell = sheet[`G${row}`];
+    const countCell = sheet[`O${row}`];
     if (countCell) {
       countCell.s = {
         ...countCell.s,
@@ -429,7 +529,7 @@ export async function downloadInventoryExcel(
   XLSX.utils.book_append_sheet(book, sheet, "Inventario");
   XLSX.writeFile(
     book,
-    `inventario-${branchName.toLowerCase().replace(/\s+/g, "-")}.xlsx`,
+    "inventario.xlsx",
     { cellStyles: true },
   );
 }

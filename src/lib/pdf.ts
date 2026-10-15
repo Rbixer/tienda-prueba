@@ -1,6 +1,7 @@
 import type {
   PdfStyleSettings,
   PdfTextStyle,
+  Invoice,
   Product,
   Sale,
   Supplier,
@@ -24,7 +25,7 @@ type DocHeaderOpts = {
   logoDataUrl?: string;
   pdfStyle?: PdfStyleSettings;
   documentTitle: string;
-  /** De dónde proviene la información (sucursal, período, etc.) */
+  /** De dónde proviene la información (período, módulo, etc.) */
   sourceLines: string[];
 };
 
@@ -36,8 +37,8 @@ const PAGE = {
 };
 
 const COLORS = {
-  navy: [11, 37, 69] as Rgb,
-  navySoft: [20, 53, 95] as Rgb,
+  navy: [11, 61, 50] as Rgb,
+  navySoft: [20, 85, 68] as Rgb,
   muted: [100, 116, 139] as Rgb,
   line: [226, 232, 240] as Rgb,
   ink: [30, 41, 59] as Rgb,
@@ -127,7 +128,7 @@ async function drawDocumentHeader(
 
   // Slogan
   const slogan =
-    opts.slogan?.trim() || "Tu tienda de confianza en el barrio";
+    opts.slogan?.trim() || "Tu salud, en buenas manos";
   applyTextStyle(doc, style.slogan, 9);
   doc.text(slogan, textX, textY);
   textY += 5;
@@ -222,8 +223,7 @@ type InventoryExportOpts = {
 
 export async function downloadInventoryPdf({
   products,
-  branchName,
-  companyName = "MI BARRIO",
+  companyName = "FARMACIA",
   slogan,
   address,
   phone,
@@ -243,7 +243,6 @@ export async function downloadInventoryPdf({
     pdfStyle,
     documentTitle: "Inventario de productos",
     sourceLines: [
-      `Ubicación / sucursal: ${branchName}`,
       `Fecha de emisión: ${new Date().toLocaleString("es-GT")}`,
       `Productos listados: ${products.length}`,
       `Fuente: módulo Inventario · stock vigente al momento de la descarga`,
@@ -298,7 +297,7 @@ export async function downloadInventoryPdf({
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.setTextColor(...accent);
-      doc.text(`${companyName} · Inventario — ${branchName}`, margin, y);
+      doc.text(`${companyName} · Inventario`, margin, y);
       y += 6;
       y = drawTableHead(y);
       doc.setFont("helvetica", "normal");
@@ -344,7 +343,7 @@ export async function downloadInventoryPdf({
 
   applyFooters(doc, companyName);
   doc.save(
-    `inventario-${branchName.toLowerCase().replace(/\s+/g, "-")}.pdf`,
+    "inventario.pdf",
   );
 }
 
@@ -364,7 +363,7 @@ export async function downloadSalesPdf(
   salesOrOpts: Sale[] | SalesExportOpts,
   branchNameArg?: string,
   periodLabelArg?: string,
-  companyNameArg = "MI BARRIO",
+  companyNameArg = "FARMACIA",
 ) {
   // Compatibilidad con llamada posicional antigua y nueva por objeto
   const opts: SalesExportOpts = Array.isArray(salesOrOpts)
@@ -378,9 +377,8 @@ export async function downloadSalesPdf(
 
   const {
     sales,
-    branchName,
     periodLabel,
-    companyName = "MI BARRIO",
+    companyName = "FARMACIA",
     slogan,
     address,
     phone,
@@ -408,7 +406,6 @@ export async function downloadSalesPdf(
     pdfStyle,
     documentTitle: "Reporte de ventas",
     sourceLines: [
-      `Sucursal: ${branchName}`,
       `Período consultado: ${periodLabel}`,
       `Fecha de emisión: ${new Date().toLocaleString("es-GT")}`,
       `Fuente: módulo Reportes · ventas registradas en el sistema`,
@@ -425,7 +422,7 @@ export async function downloadSalesPdf(
     doc.text("No hay ventas en este período.", margin, y);
     applyFooters(doc, companyName);
     doc.save(
-      `ventas-${branchName.toLowerCase().replace(/\s+/g, "-")}-${periodLabel.toLowerCase().replace(/\s+/g, "-")}.pdf`,
+      `ventas-${periodLabel.toLowerCase().replace(/\s+/g, "-")}.pdf`,
     );
     return;
   }
@@ -438,7 +435,7 @@ export async function downloadSalesPdf(
       doc.setFontSize(9);
       doc.setTextColor(...accent);
       doc.text(
-        `${companyName} · Ventas — ${branchName} (${periodLabel})`,
+        `${companyName} · Ventas (${periodLabel})`,
         margin,
         y,
       );
@@ -482,7 +479,7 @@ export async function downloadSalesPdf(
 
   applyFooters(doc, companyName);
   doc.save(
-    `ventas-${branchName.toLowerCase().replace(/\s+/g, "-")}-${periodLabel.toLowerCase().replace(/\s+/g, "-")}.pdf`,
+    `ventas-${periodLabel.toLowerCase().replace(/\s+/g, "-")}.pdf`,
   );
 }
 
@@ -510,7 +507,7 @@ export async function downloadSupplierPaymentPdf(opts: {
   const {
     payment,
     supplier,
-    companyName = "MI BARRIO",
+    companyName = "FARMACIA",
     slogan,
     address,
     phone,
@@ -608,7 +605,7 @@ export async function printSupplierPaymentTicket(opts: {
   const {
     payment,
     supplier,
-    companyName = "MI BARRIO",
+    companyName = "FARMACIA",
     slogan,
     address,
     phone,
@@ -753,8 +750,7 @@ export async function printSaleTicket(opts: {
 }) {
   const {
     sale,
-    branchName,
-    companyName = "MI BARRIO",
+    companyName = "FARMACIA",
     slogan,
     address,
     phone,
@@ -772,8 +768,8 @@ export async function printSaleTicket(opts: {
   const nameWidth = right - colName - 13;
 
   const estimatedH = Math.max(
-    110,
-    48 + sale.items.length * 11 + 36,
+    120,
+    58 + sale.items.length * 11 + 36,
   );
 
   const doc = new jsPDF({
@@ -826,12 +822,6 @@ export async function printSaleTicket(opts: {
   doc.setTextColor(20);
   center("TICKET DE VENTA", 7.5, "bold");
   y += 2.8;
-  if (branchName) {
-    doc.setTextColor(70);
-    center(branchName, 5.5, "normal");
-    y += 2.8;
-  }
-
   doc.setFont("helvetica", "normal");
   doc.setFontSize(5.5);
   doc.setTextColor(70);
@@ -896,8 +886,28 @@ export async function printSaleTicket(opts: {
   doc.text(formatMoney(sale.total), right, y, { align: "right" });
   y += 5;
 
+  if (sale.paymentMethod) {
+    const methodLabel =
+      sale.paymentMethod === "efectivo"
+        ? "Efectivo"
+        : sale.paymentMethod === "tarjeta"
+          ? "Tarjeta"
+          : "Transferencia";
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6);
+    doc.setTextColor(70);
+    doc.text(`Pago: ${methodLabel}`, margin, y);
+    y += 3;
+    if (sale.paymentMethod === "efectivo" && sale.amountReceived !== undefined) {
+      doc.text(`Recibido: ${formatMoney(sale.amountReceived)}`, margin, y);
+      y += 3;
+      doc.text(`Vuelto: ${formatMoney(sale.change ?? 0)}`, margin, y);
+      y += 3.2;
+    }
+  }
+
   doc.setTextColor(70);
-  center("¡Gracias por su compra!", 5.5, "normal");
+  center("Gracias por su preferencia", 5.5, "normal");
   y += 2.6;
   center(new Date().toLocaleString("es-GT"), 4.5, "normal");
 
@@ -925,7 +935,7 @@ export async function downloadSupplierPaymentsHistoryPdf(opts: {
     payments,
     suppliers,
     supplierId,
-    companyName = "MI BARRIO",
+    companyName = "FARMACIA",
     slogan,
     address,
     phone,
@@ -1036,4 +1046,127 @@ export async function downloadSupplierPaymentsHistoryPdf(opts: {
     ? `historial-pagos-${focus.name.toLowerCase().replace(/\s+/g, "-").slice(0, 24)}.pdf`
     : "historial-pagos-proveedores.pdf";
   doc.save(file);
+}
+
+export async function downloadInvoicePdf(opts: {
+  invoice: Invoice;
+  sale: Sale;
+  companyName?: string;
+  address?: string;
+  phone?: string;
+}) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "mm", format: "a5" });
+  const company = opts.companyName?.trim() || "FARMACIA";
+  let y = 16;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text(company, 12, y);
+  y += 6;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text("Comprobante interno de factura", 12, y);
+  y += 5;
+  if (opts.address) {
+    doc.text(opts.address, 12, y);
+    y += 4;
+  }
+  if (opts.phone) {
+    doc.text(opts.phone, 12, y);
+    y += 4;
+  }
+  y += 3;
+  doc.setFont("helvetica", "bold");
+  doc.text(
+    `Serie ${opts.invoice.series}  No. ${String(opts.invoice.number).padStart(6, "0")}`,
+    12,
+    y,
+  );
+  y += 6;
+  doc.setFont("helvetica", "normal");
+  doc.text(`NIT emisor: ${opts.invoice.nitEmitter || "—"}`, 12, y);
+  y += 5;
+  doc.text(`NIT receptor: ${opts.invoice.nitReceiver}`, 12, y);
+  y += 5;
+  doc.text(`Nombre: ${opts.invoice.receiverName}`, 12, y);
+  y += 5;
+  doc.text(formatDate(opts.invoice.createdAt), 12, y);
+  y += 8;
+  for (const item of opts.sale.items) {
+    const unit =
+      item.saleUnit === "unidad"
+        ? "und"
+        : item.saleUnit === "blister"
+          ? "blister"
+          : "caja";
+    doc.text(
+      `${item.quantity} ${unit}  ${item.name}`.slice(0, 42),
+      12,
+      y,
+    );
+    doc.text(formatMoney(item.price * item.quantity), 130, y, { align: "right" });
+    y += 5;
+  }
+  y += 3;
+  doc.setFont("helvetica", "bold");
+  doc.text(`Total ${formatMoney(opts.invoice.total)}`, 12, y);
+  y += 10;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  const note = doc.splitTextToSize(
+    "Este documento es un comprobante del sistema. No es una factura electrónica certificada por la SAT ni tiene número de autorización. La certificación FEL se habilita al contratar un certificador.",
+    120,
+  );
+  doc.text(note, 12, y);
+  doc.save(
+    `factura-${opts.invoice.series}-${opts.invoice.number}.pdf`,
+  );
+}
+
+export async function downloadControlledLogPdf(opts: {
+  sales: Sale[];
+  companyName?: string;
+  branchName?: string;
+}) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  let y = 16;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text(opts.companyName?.trim() || "FARMACIA", 14, y);
+  y += 6;
+  doc.setFontSize(11);
+  doc.text("Libro de salida de medicamentos controlados", 14, y);
+  y += 5;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text(opts.branchName ?? "", 14, y);
+  y += 8;
+  const rows = opts.sales.filter((sale) => sale.prescription);
+  if (!rows.length) {
+    doc.text("No hay dispensaciones con receta en este período.", 14, y);
+  }
+  for (const sale of rows) {
+    if (y > 270) {
+      doc.addPage();
+      y = 16;
+    }
+    const rx = sale.prescription!;
+    doc.setFont("helvetica", "bold");
+    doc.text(
+      `${formatDate(sale.createdAt)} · Receta ${rx.number}`,
+      14,
+      y,
+    );
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.text(`Médico: ${rx.doctor} · Paciente: ${rx.patient} · Fecha receta: ${rx.date}`, 14, y);
+    y += 5;
+    for (const item of sale.items) {
+      doc.text(`· ${item.quantity} ${item.name}`, 18, y);
+      y += 4;
+    }
+    y += 3;
+  }
+  doc.save("libro-controlados.pdf");
 }

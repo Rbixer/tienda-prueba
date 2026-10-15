@@ -14,14 +14,13 @@ import {
   Scale,
   ShoppingCart,
   Sparkles,
-  Store,
   TrendingUp,
   Trophy,
   Users,
   Wallet,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { BranchSalesChart } from "@/components/charts/BranchSalesChart";
+import { CashStatusNotice } from "@/components/CashStatusNotice";
 import { DonutGauge } from "@/components/charts/DonutGauge";
 import { ProfitLossPanel } from "@/components/charts/ProfitLossPanel";
 import { HourlySalesChart } from "@/components/charts/HourlySalesChart";
@@ -39,7 +38,6 @@ import {
   marginByDay,
   percentChange,
   profitAndLoss,
-  salesByBranch,
   salesByDay,
   salesByHour,
   salesBySeller,
@@ -173,8 +171,7 @@ function SectionHeader({
 }
 
 export default function HomePage() {
-  const { session, branchProducts, branchSales, currentBranchName, data } =
-    useAuth();
+  const { session, branchProducts, branchSales } = useAuth();
   const isAdmin = session?.role === "administrador";
 
   const stats = useMemo(() => {
@@ -216,19 +213,6 @@ export default function HomePage() {
       : [];
     const weekProfit = margins.reduce((s, m) => s + m.profit, 0);
     const pnl = profitAndLoss(weekSales, branchProducts, getCostPrice);
-    const allWeekSales = isAdmin
-      ? data.sales.filter(
-          (s) => new Date(s.createdAt).getTime() >= weekStart,
-        )
-      : [];
-    const branchStats = isAdmin
-      ? salesByBranch(
-          allWeekSales,
-          data.branches,
-          data.products,
-          getCostPrice,
-        )
-      : [];
     const recentSales = branchSales.slice(0, 5);
     const maxTopQty = Math.max(...tops.map((t) => t.quantity), 1);
     const soldShare =
@@ -278,7 +262,6 @@ export default function HomePage() {
       margins,
       weekProfit,
       pnl,
-      branchStats,
       recentSales,
       maxTopQty,
       soldShare,
@@ -290,9 +273,6 @@ export default function HomePage() {
   }, [
     branchProducts,
     branchSales,
-    data.branches,
-    data.products,
-    data.sales,
     isAdmin,
     session?.userId,
   ]);
@@ -316,7 +296,6 @@ export default function HomePage() {
     margins,
     weekProfit,
     pnl,
-    branchStats,
     recentSales,
     maxTopQty,
     soldShare,
@@ -433,13 +412,10 @@ export default function HomePage() {
   return (
     <AppShell
       title="Dashboard"
-      subtitle={
-        isAdmin
-          ? `${currentBranchName} · análisis completo`
-          : `${currentBranchName} · resumen del día`
-      }
+      subtitle={isAdmin ? "Análisis de la farmacia" : "Resumen del día"}
     >
       <div className="flex w-full min-w-0 max-w-full flex-col gap-3 sm:gap-4">
+        <CashStatusNotice />
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-4">
           <StatCard
@@ -486,22 +462,13 @@ export default function HomePage() {
           <SectionHeader
             icon={Scale}
             title="Ganancia y pérdida"
-            hint={`Inventario vs ventas · ${currentBranchName}`}
+            hint="Inventario frente a las ventas"
           />
           <ProfitLossPanel summary={pnl} />
         </Panel>
 
         {isAdmin ? (
           <>
-            <Panel>
-              <SectionHeader
-                icon={Store}
-                title="Ventas por sucursal"
-                hint="Comparativa de los últimos 7 días"
-              />
-              <BranchSalesChart branches={branchStats} />
-            </Panel>
-
             <div className="grid gap-3 lg:grid-cols-5">
               <Panel className="min-w-0 lg:col-span-3">
                 <SectionHeader
@@ -528,7 +495,7 @@ export default function HomePage() {
                     label="Alto volumen"
                     value={strongShare}
                     percent={strongShare}
-                    color="#2563eb"
+                    color="#0f7a56"
                   />
                   <DonutGauge
                     label="A descartar"

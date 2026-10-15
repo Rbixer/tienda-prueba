@@ -14,9 +14,9 @@ import { AppShell } from "@/components/AppShell";
 import { ProductThumb } from "@/components/ProductThumb";
 import { Panel, buttonSecondary } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
-import { downloadSalesPdf } from "@/lib/pdf";
-import { formatDate, formatMoney } from "@/lib/store";
-import type { Sale } from "@/lib/types";
+import { downloadControlledLogPdf, downloadSalesPdf } from "@/lib/pdf";
+import { formatDate, formatMoney, isCashFloatLocked } from "@/lib/store";
+import type { CashShift, Sale } from "@/lib/types";
 
 type Period = "hoy" | "semana" | "mes" | "todo";
 
@@ -24,9 +24,9 @@ function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-function matchesPeriod(sale: Sale, period: Period) {
+function matchesPeriod(iso: string, period: Period) {
   if (period === "todo") return true;
-  const saleTime = new Date(sale.createdAt).getTime();
+  const saleTime = new Date(iso).getTime();
   const now = new Date();
   const today = startOfDay(now);
   if (period === "hoy") return saleTime >= today;
@@ -159,16 +159,25 @@ function KpiCard({
   );
 }
 
+function signedMoney(value: number) {
+  const formatted = formatMoney(Math.abs(value));
+  if (value > 0) return `+${formatted}`;
+  if (value < 0) return `-${formatted}`;
+  return formatted;
+}
+
 export default function ReportesPage() {
-  const { branchSales, currentBranchName, session, data } = useAuth();
+  const { session, branchSales, currentBranchName, data, voidSale, returnSaleLine } =
+    useAuth();
   const [period, setPeriod] = useState<Period>("hoy");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [openShiftId, setOpenShiftId] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
   const filtered = useMemo(
     () =>
       branchSales
-        .filter((s) => matchesPeriod(s, period))
+        .filter((s) => matchesPeriod(s.createdAt, period))
         .sort(
           (a, b) =>
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
@@ -176,9 +185,10 @@ export default function ReportesPage() {
     [branchSales, period],
   );
 
-  const total = filtered.reduce((sum, s) => sum + s.total, 0);
-  const tickets = filtered.length;
-  const itemsSold = filtered.reduce(
+  const activeSales = filtered.filter((sale) => sale.status !== "anulada");
+  const total = activeSales.reduce((sum, s) => sum + s.total, 0);
+  const tickets = activeSales.length;
+  const itemsSold = activeSales.reduce(
     (sum, s) => sum + s.items.reduce((n, i) => n + i.quantity, 0),
     0,
   );
@@ -197,11 +207,41 @@ export default function ReportesPage() {
     return Array.from(map.values());
   }, [filtered]);
 
+  const cashShifts = useMemo(() => {
+    const branchId = session?.branchId;
+    return (data.cashShifts ?? [])
+      .filter((shift) => !branchId || shift.branchId === branchId)
+      .filter((shift) => matchesPeriod(shift.openedAt, period))
+      .sort(
+        (a, b) =>
+          new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime(),
+      );
+  }, [data.cashShifts, period, session?.branchId]);
+
+  const shiftGroups = useMemo(() => {
+    const map = new Map<string, { label: string; shifts: CashShift[] }>();
+    for (const shift of cashShifts) {
+      const key = String(startOfDay(new Date(shift.openedAt)));
+      const entry = map.get(key);
+      if (entry) entry.shifts.push(shift);
+      else map.set(key, { label: dayLabel(shift.openedAt), shifts: [shift] });
+    }
+    return Array.from(map.values());
+  }, [cashShifts]);
+
+  const closedShifts = cashShifts.filter((shift) => shift.closedAt);
+  const periodDifference = closedShifts.reduce(
+    (sum, shift) => sum + (shift.difference ?? 0),
+    0,
+  );
+  const floatLocked = isCashFloatLocked(data.settings);
+  const baseAmount = floatLocked ? (data.settings.cashFloat ?? 0) : 0;
+
   async function onDownload() {
     setDownloading(true);
     try {
       await downloadSalesPdf({
-        sales: filtered,
+        sales: activeSales,
         branchName: currentBranchName,
         periodLabel,
         companyName: data.settings?.companyName,
@@ -219,9 +259,7 @@ export default function ReportesPage() {
   return (
     <AppShell
       title="Reportes de ventas"
-      subtitle={`Historial de ventas en ${currentBranchName}${
-        session?.role === "vendedor" ? " (tu sucursal)" : ""
-      }.`}
+      subtitle="Ventas y aperturas de caja"
     >
       <div className="flex w-full min-w-0 flex-col gap-3 sm:gap-4">
         {/* Barra de control */}
@@ -254,8 +292,21 @@ export default function ReportesPage() {
             <button
               type="button"
               className={`${buttonSecondary} w-full sm:w-auto`}
+              onClick={() =>
+                void downloadControlledLogPdf({
+                  sales: activeSales.filter((sale) => sale.prescription),
+                  companyName: data.settings?.companyName,
+                  branchName: currentBranchName,
+                })
+              }
+            >
+              Libro de controlados
+            </button>
+            <button
+              type="button"
+              className={`${buttonSecondary} w-full sm:w-auto`}
               onClick={onDownload}
-              disabled={downloading || filtered.length === 0}
+              disabled={downloading || activeSales.length === 0}
             >
               <Download size={16} />
               {downloading ? "Generando..." : "Descargar PDF"}
@@ -294,6 +345,238 @@ export default function ReportesPage() {
             tone="amber"
           />
         </div>
+
+        <Panel className="!p-0">
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-3 sm:px-4 sm:py-3.5">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--brand-soft)] text-[var(--brand)]">
+                <Wallet size={16} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="font-[family-name:var(--font-display)] text-base font-semibold leading-tight">
+                  Aperturas de caja
+                </h2>
+                <p className="text-[11px] text-[var(--muted)]">
+                  Cuota de cada apertura y su corte
+                </p>
+              </div>
+            </div>
+            <span className="shrink-0 rounded-lg bg-[var(--bg-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--muted)]">
+              {cashShifts.length}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 border-b border-[var(--line)] px-3 py-3 sm:px-4">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                {floatLocked ? "Cuota fija" : "Apertura"}
+              </p>
+              <p className="truncate text-sm font-bold tabular-nums">
+                {floatLocked ? formatMoney(baseAmount) : "Libre"}
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                Cortes
+              </p>
+              <p className="truncate text-sm font-bold tabular-nums">
+                {closedShifts.length}
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                Diferencia
+              </p>
+              <p
+                className={`truncate text-sm font-bold tabular-nums ${
+                  periodDifference < 0
+                    ? "text-red-700"
+                    : periodDifference > 0
+                      ? "text-[var(--brand)]"
+                      : ""
+                }`}
+              >
+                {signedMoney(periodDifference)}
+              </p>
+            </div>
+          </div>
+
+          <div className="max-h-[min(50dvh,28rem)] overflow-y-auto overscroll-y-contain px-2.5 py-3 sm:px-4">
+            {shiftGroups.map((group) => (
+              <section key={group.label} className="mb-4 last:mb-0">
+                <div className="mb-2 flex min-w-0 items-center gap-2 px-0.5">
+                  <p className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+                    {group.label}
+                  </p>
+                  <span className="h-px min-w-4 flex-1 bg-[var(--line)]" aria-hidden />
+                </div>
+                <ul className="space-y-2">
+                  {group.shifts.map((shift) => {
+                    const open = openShiftId === shift.id;
+                    const closed = Boolean(shift.closedAt);
+                    return (
+                      <li
+                        key={shift.id}
+                        className={`overflow-hidden rounded-xl border bg-white transition ${
+                          open
+                            ? "border-[var(--navy)]/30 shadow-[0_6px_18px_rgba(11,37,69,0.12)]"
+                            : "border-[var(--line)] hover:border-[var(--navy)]/25 hover:shadow-sm"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2.5 px-2.5 py-3 text-left sm:gap-3 sm:px-4"
+                          onClick={() =>
+                            setOpenShiftId(open ? null : shift.id)
+                          }
+                          aria-expanded={open}
+                        >
+                          <span className="flex h-10 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--slate-soft)] text-[10px] font-bold leading-none tracking-tight text-[var(--navy)] ring-1 ring-[var(--line)] sm:w-12 sm:text-[11px]">
+                            {timeOnly(shift.openedAt)}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                              <span className="break-words font-[family-name:var(--font-display)] text-base font-bold tabular-nums text-[var(--ink)]">
+                                {formatMoney(shift.openingAmount)}
+                              </span>
+                              <span
+                                className={`text-[11px] font-semibold ${
+                                  closed ? "text-[var(--muted)]" : "text-[var(--brand)]"
+                                }`}
+                              >
+                                {closed ? "Cerrada" : "Abierta"}
+                              </span>
+                            </span>
+                            <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--muted)]">
+                              <User size={11} className="shrink-0" />
+                              <span className="truncate">{shift.userName}</span>
+                              {closed && shift.difference !== undefined ? (
+                                <>
+                                  <span className="shrink-0 opacity-50">·</span>
+                                  <span className="shrink-0">
+                                    Dif. {signedMoney(shift.difference)}
+                                  </span>
+                                </>
+                              ) : null}
+                            </span>
+                          </span>
+                          <ChevronDown
+                            size={18}
+                            className={`shrink-0 text-[var(--muted)] transition ${
+                              open ? "rotate-180 text-[var(--navy)]" : ""
+                            }`}
+                          />
+                        </button>
+                        {open ? (
+                          <div className="border-t border-[var(--line)] bg-[var(--bg-soft)]/60 px-2.5 py-3 sm:px-4">
+                            <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                              <div className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-[var(--line)]">
+                                <dt className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                                  Apertura
+                                </dt>
+                                <dd className="text-sm font-semibold">
+                                  {formatDate(shift.openedAt)}
+                                </dd>
+                              </div>
+                              <div className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-[var(--line)]">
+                                <dt className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                                  Fondo base
+                                </dt>
+                                <dd className="text-sm font-semibold tabular-nums">
+                                  {formatMoney(shift.openingAmount)}
+                                </dd>
+                              </div>
+                              <div className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-[var(--line)]">
+                                <dt className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                                  Cierre
+                                </dt>
+                                <dd className="text-sm font-semibold">
+                                  {shift.closedAt
+                                    ? formatDate(shift.closedAt)
+                                    : "Día en curso"}
+                                </dd>
+                              </div>
+                              {closed ? (
+                                <>
+                                  <div className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-[var(--line)]">
+                                    <dt className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                                      Esperado
+                                    </dt>
+                                    <dd className="text-sm font-semibold tabular-nums">
+                                      {formatMoney(shift.expectedCash ?? 0)}
+                                    </dd>
+                                  </div>
+                                  <div className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-[var(--line)]">
+                                    <dt className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                                      Contado
+                                    </dt>
+                                    <dd className="text-sm font-semibold tabular-nums">
+                                      {formatMoney(shift.countedCash ?? 0)}
+                                    </dd>
+                                  </div>
+                                  <div className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-[var(--line)]">
+                                    <dt className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                                      Diferencia
+                                    </dt>
+                                    <dd className="text-sm font-semibold tabular-nums">
+                                      {signedMoney(shift.difference ?? 0)}
+                                    </dd>
+                                  </div>
+                                  <div className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-[var(--line)]">
+                                    <dt className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                                      Efectivo
+                                    </dt>
+                                    <dd className="text-sm font-semibold tabular-nums">
+                                      {formatMoney(shift.cashSales ?? 0)}
+                                    </dd>
+                                  </div>
+                                  <div className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-[var(--line)]">
+                                    <dt className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                                      Tarjeta
+                                    </dt>
+                                    <dd className="text-sm font-semibold tabular-nums">
+                                      {formatMoney(shift.cardTotal ?? 0)}
+                                    </dd>
+                                  </div>
+                                  <div className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-[var(--line)]">
+                                    <dt className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                                      Transferencia
+                                    </dt>
+                                    <dd className="text-sm font-semibold tabular-nums">
+                                      {formatMoney(shift.transferTotal ?? 0)}
+                                    </dd>
+                                  </div>
+                                </>
+                              ) : null}
+                            </dl>
+                            {shift.note ? (
+                              <p className="mt-2 text-[11px] text-[var(--muted)]">
+                                {shift.note}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ))}
+            {cashShifts.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 px-4 py-12 text-center">
+                <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--bg-soft)] text-[var(--muted)]">
+                  <Wallet size={26} className="opacity-60" />
+                </span>
+                <p className="mt-1 text-sm font-semibold text-[var(--ink)]">
+                  Sin aperturas en este período
+                </p>
+                <p className="max-w-xs text-xs text-[var(--muted)]">
+                  Las aperturas y los cortes del día aparecen aquí.
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </Panel>
 
         {/* Detalle */}
         <Panel className="!p-0">
@@ -362,6 +645,11 @@ export default function ReportesPage() {
                               <span className="break-words font-[family-name:var(--font-display)] text-base font-bold tabular-nums text-[var(--ink)]">
                                 {formatMoney(sale.total)}
                               </span>
+                              {sale.status === "anulada" ? (
+                                <span className="text-[11px] font-semibold text-red-700">
+                                  Anulada
+                                </span>
+                              ) : null}
                               <span className="text-[11px] text-[var(--muted)]">
                                 {units} und.
                               </span>
@@ -387,10 +675,41 @@ export default function ReportesPage() {
 
                         {open ? (
                           <div className="border-t border-[var(--line)] bg-[var(--bg-soft)]/60 px-2.5 py-3 sm:px-4">
+                            {sale.status === "anulada" ? (
+                              <p className="mb-2 text-xs font-semibold text-red-700">
+                                Venta anulada
+                              </p>
+                            ) : (
+                              <div className="mb-2 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  className={buttonSecondary}
+                                  onClick={() => {
+                                    const err = voidSale(sale.id);
+                                    if (err) window.alert(err);
+                                  }}
+                                >
+                                  Anular venta
+                                </button>
+                              </div>
+                            )}
+                            {sale.prescription ? (
+                              <p className="mb-2 text-[11px] text-[var(--muted)]">
+                                Receta {sale.prescription.number} ·{" "}
+                                {sale.prescription.doctor} ·{" "}
+                                {sale.prescription.patient}
+                              </p>
+                            ) : null}
+                            {sale.customerName ? (
+                              <p className="mb-2 text-[11px] text-[var(--muted)]">
+                                {sale.customerName}
+                                {sale.customerPhone ? ` · ${sale.customerPhone}` : ""}
+                              </p>
+                            ) : null}
                             <ul className="space-y-2">
-                              {sale.items.map((item) => (
+                              {sale.items.map((item, index) => (
                                 <li
-                                  key={`${sale.id}-${item.productId}`}
+                                  key={`${sale.id}-${index}`}
                                   className="flex items-center gap-2.5 rounded-lg bg-white px-2.5 py-2 ring-1 ring-[var(--line)]"
                                 >
                                   <ProductThumb
@@ -409,6 +728,18 @@ export default function ReportesPage() {
                                   <span className="shrink-0 text-sm font-semibold tabular-nums text-[var(--ink)]">
                                     {formatMoney(item.price * item.quantity)}
                                   </span>
+                                  {sale.status !== "anulada" ? (
+                                    <button
+                                      type="button"
+                                      className="text-[11px] font-semibold text-[var(--brand)]"
+                                      onClick={() => {
+                                        const err = returnSaleLine(sale.id, index);
+                                        if (err) window.alert(err);
+                                      }}
+                                    >
+                                      Devolver
+                                    </button>
+                                  ) : null}
                                 </li>
                               ))}
                             </ul>

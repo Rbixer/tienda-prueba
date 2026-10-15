@@ -4,9 +4,7 @@ import {
   Package,
   Settings,
   ShoppingCart,
-  Store,
   Truck,
-  Users,
   Warehouse,
   type LucideIcon,
 } from "lucide-react";
@@ -52,20 +50,6 @@ export const NAV_ITEMS: NavItem[] = [
     permission: "reportes",
   },
   {
-    href: "/app/sucursales",
-    label: "Sucursales",
-    icon: Store,
-    permission: "sucursales",
-    adminModule: true,
-  },
-  {
-    href: "/app/usuarios",
-    label: "Usuarios",
-    icon: Users,
-    permission: "usuarios",
-    adminModule: true,
-  },
-  {
     href: "/app/configuracion",
     label: "Configuración",
     icon: Settings,
@@ -75,7 +59,15 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 export function getNavItems(session?: Session | null) {
-  return NAV_ITEMS.filter((item) => hasPermission(session, item.permission));
+  return NAV_ITEMS.filter((item) => {
+    if (item.href === "/app/configuracion") {
+      return (
+        hasPermission(session, "configuracion") ||
+        hasPermission(session, "usuarios")
+      );
+    }
+    return hasPermission(session, item.permission);
+  });
 }
 
 export function isNavActive(pathname: string, href: string) {
@@ -92,6 +84,27 @@ export function permissionForPath(pathname: string): Permission | null {
       (pathname === item.href || pathname.startsWith(`${item.href}/`)),
   );
   return match?.permission ?? null;
+}
+
+/** Primera ruta que el usuario sí puede abrir. */
+export function firstAllowedPath(session?: Session | null): string | null {
+  return getNavItems(session)[0]?.href ?? null;
+}
+
+/** Destino de ingreso: la ruta pedida si tiene permiso, si no el primer módulo permitido. */
+export function resolveLandingPath(
+  session: Session | null | undefined,
+  raw?: string | null,
+): string {
+  const requested = safeAppPath(raw);
+  if (!session) return requested;
+  const required = permissionForPath(requested);
+  const allowed =
+    !required ||
+    hasPermission(session, required) ||
+    (required === "configuracion" && hasPermission(session, "usuarios"));
+  if (allowed) return requested;
+  return firstAllowedPath(session) ?? requested;
 }
 
 /** Solo permite redirecciones internas seguras bajo /app. */

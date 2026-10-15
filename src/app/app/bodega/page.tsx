@@ -142,9 +142,9 @@ export default function BodegaPage() {
   function confirmTransfer() {
     const destination = destinationOptions.find((b) => b.id === toId);
     if (!destination) {
-      setError("Selecciona una sucursal de destino.");
+      setError("No hay destino para el traslado.");
       setOk(null);
-      toast.error("Selecciona una sucursal de destino.", "Traslado");
+      toast.error("No hay destino para el traslado.", "Traslado");
       return;
     }
     if (fromId === toId) {
@@ -224,7 +224,7 @@ export default function BodegaPage() {
 
                 <label className="min-w-0 flex-1 space-y-1">
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
-                    Destino (sucursal)
+                    Destino
                   </span>
                   <select
                     className={`${inputClass} font-semibold`}

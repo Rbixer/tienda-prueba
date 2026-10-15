@@ -1,4 +1,4 @@
-import type { Branch, Product, Sale } from "@/lib/types";
+import type { Product, Sale } from "@/lib/types";
 
 /** Resumen de ganancia y pérdida del inventario frente a las ventas. */
 export type ProfitSummary = {
@@ -24,23 +24,6 @@ export type ProfitSummary = {
   lossFromUnderpriced: number;
   /** Unidades vendidas en el período */
   unitsSold: number;
-};
-
-export type BranchBucket = {
-  branchId: string;
-  name: string;
-  isWarehouse: boolean;
-  revenue: number;
-  cost: number;
-  profit: number;
-  marginPct: number;
-  tickets: number;
-  unitsSold: number;
-  avgTicket: number;
-  products: number;
-  stockCost: number;
-  /** Participación % sobre el total vendido */
-  share: number;
 };
 
 export type DayBucket = {
@@ -320,7 +303,7 @@ export function marginByDay(
 /**
  * Ganancia y pérdida del inventario frente a las ventas del período.
  * Compara lo cobrado contra el costo de lo vendido y evalúa el capital
- * que sigue inmovilizado en bodega/sucursal.
+ * que sigue inmovilizado en bodega o en mostrador.
  */
 export function profitAndLoss(
   sales: Sale[],
@@ -383,66 +366,4 @@ export function profitAndLoss(
     lossFromUnderpriced,
     unitsSold,
   };
-}
-
-/** Ventas, margen e inventario agrupados por sucursal. */
-export function salesByBranch(
-  sales: Sale[],
-  branches: Branch[],
-  products: Product[],
-  getCost: (p: Product) => number,
-): BranchBucket[] {
-  const costMap = new Map(products.map((p) => [p.id, getCost(p)]));
-
-  const buckets = new Map<string, BranchBucket>(
-    branches.map((b) => [
-      b.id,
-      {
-        branchId: b.id,
-        name: b.name,
-        isWarehouse: Boolean(b.isWarehouse),
-        revenue: 0,
-        cost: 0,
-        profit: 0,
-        marginPct: 0,
-        tickets: 0,
-        unitsSold: 0,
-        avgTicket: 0,
-        products: 0,
-        stockCost: 0,
-        share: 0,
-      },
-    ]),
-  );
-
-  for (const p of products) {
-    const bucket = buckets.get(p.branchId);
-    if (!bucket) continue;
-    bucket.products += 1;
-    bucket.stockCost += getCost(p) * p.quantity;
-  }
-
-  for (const sale of sales) {
-    const bucket = buckets.get(sale.branchId);
-    if (!bucket) continue;
-    bucket.revenue += sale.total;
-    bucket.tickets += 1;
-    for (const item of sale.items) {
-      const unitCost = costMap.get(item.productId) ?? item.price * 0.7;
-      bucket.cost += unitCost * item.quantity;
-      bucket.unitsSold += item.quantity;
-    }
-  }
-
-  const list = [...buckets.values()];
-  const totalRevenue = list.reduce((s, b) => s + b.revenue, 0);
-
-  for (const b of list) {
-    b.profit = b.revenue - b.cost;
-    b.marginPct = b.revenue > 0 ? (b.profit / b.revenue) * 100 : 0;
-    b.avgTicket = b.tickets > 0 ? b.revenue / b.tickets : 0;
-    b.share = totalRevenue > 0 ? (b.revenue / totalRevenue) * 100 : 0;
-  }
-
-  return list.sort((a, b) => b.revenue - a.revenue);
 }

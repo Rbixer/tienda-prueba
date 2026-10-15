@@ -16,8 +16,6 @@ const PRIMARY_ORDER = [
 const shortLabel: Record<string, string> = {
   Inventario: "Stock",
   Reportes: "Ventas",
-  Sucursales: "Locales",
-  Usuarios: "Equipo",
   Configuración: "Config",
   Bodega: "Bodega",
   Proveedores: "Proveed.",

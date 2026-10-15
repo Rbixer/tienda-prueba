@@ -89,11 +89,11 @@ export function mergeStores(
       companyName:
         s.settings?.companyName?.trim() ||
         l.settings?.companyName?.trim() ||
-        "MI BARRIO",
+        "FARMACIA",
       slogan:
         s.settings?.slogan?.trim() ||
         l.settings?.slogan?.trim() ||
-        "Tu tienda de confianza en el barrio",
+        "Tu salud, en buenas manos",
       address:
         s.settings?.address?.trim() ||
         l.settings?.address?.trim() ||

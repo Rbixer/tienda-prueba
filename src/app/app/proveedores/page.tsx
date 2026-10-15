@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { PurchaseOrdersPanel } from "@/components/PurchaseOrdersPanel";
 import { GuardAdmin } from "@/components/GuardAdmin";
 import {
   Field,
@@ -429,6 +430,7 @@ export default function ProveedoresPage() {
     >
       <GuardAdmin>
         <div className="flex w-full min-w-0 flex-col gap-3 pb-2">
+          <PurchaseOrdersPanel />
           <div className="grid gap-3 sm:grid-cols-3">
             <KpiCard
               featured

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronsLeft, ChevronsRight, LogOut, MapPin } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, LogOut } from "lucide-react";
 import { CompanyBrand } from "@/components/CompanyBrand";
 import { useAuth } from "@/context/AuthContext";
 import { getNavItems, isNavActive } from "@/lib/nav";
@@ -15,21 +15,21 @@ export function SideNav({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { session, logout, data, currentBranchName } = useAuth();
+  const { session, logout, data } = useAuth();
   const items = getNavItems(session);
-  const companyName = data.settings?.companyName ?? "MI BARRIO";
+  const companyName = data.settings?.companyName?.trim() || "FARMACIA";
   const primary = items.filter((i) => !i.adminModule);
   const admin = items.filter((i) => i.adminModule);
 
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-40 hidden flex-col overflow-hidden bg-[#171a21] text-white shadow-[8px_0_30px_rgba(15,23,42,0.08)] transition-[width] duration-200 md:flex ${
+      className={`fixed inset-y-0 left-0 z-40 hidden flex-col overflow-hidden bg-[var(--navy)] text-white shadow-[8px_0_30px_rgba(11,61,50,0.16)] transition-[width] duration-200 md:flex ${
         collapsed ? "w-[4.6rem]" : "w-60"
       }`}
     >
       {/* Ambient glow */}
       <span
-        className="pointer-events-none absolute -left-20 top-24 h-44 w-44 rounded-full bg-amber-400/6 blur-3xl"
+        className="pointer-events-none absolute -left-20 top-24 h-44 w-44 rounded-full bg-emerald-300/10 blur-3xl"
         aria-hidden
       />
       <span
@@ -63,17 +63,6 @@ export function SideNav({
           >
             {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
           </button>
-        </div>
-        <div
-          className={`mt-3 flex items-center gap-1.5 rounded-lg bg-white/[0.06] text-[11px] text-white/65 ring-1 ring-white/10 ${
-            collapsed ? "justify-center px-1 py-1.5" : "px-2.5 py-1.5"
-          }`}
-          title={currentBranchName}
-        >
-          <MapPin size={12} className="shrink-0 text-amber-400" />
-          {!collapsed ? (
-            <span className="truncate font-medium">{currentBranchName}</span>
-          ) : null}
         </div>
       </div>
 
@@ -124,7 +113,7 @@ export function SideNav({
           }`}
           title={`${session?.name ?? "Usuario"} · ${session?.role ?? ""}`}
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-xs font-bold text-[#171a21] shadow-sm">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--brand)] text-xs font-bold text-white shadow-sm">
             {(session?.name?.[0] ?? "U").toUpperCase()}
           </span>
           {!collapsed ? (
@@ -204,20 +193,20 @@ function NavLink({
         collapsed ? "justify-center px-0 py-2" : "px-3 py-2.5"
       } ${
         active
-          ? "bg-[#f7f7f5] text-[#20232b] shadow-[0_6px_18px_rgba(0,0,0,0.2)]"
+          ? "bg-[#f4fbf7] text-[var(--navy)] shadow-[0_6px_18px_rgba(0,0,0,0.2)]"
           : "text-white/70 hover:bg-white/10 hover:text-white"
       }`}
     >
       {active && !collapsed ? (
         <span
-          className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-amber-500"
+          className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-[var(--brand)]"
           aria-hidden
         />
       ) : null}
       <span
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${
           active
-            ? "bg-amber-100 text-amber-700"
+            ? "bg-[var(--brand-soft)] text-[var(--brand)]"
             : "bg-white/[0.07] text-white/75 group-hover:bg-white/12"
         }`}
       >

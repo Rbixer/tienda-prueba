@@ -90,7 +90,7 @@ export function InstallAppPrompt() {
             <Download size={18} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">Instala MI BARRIO</p>
+            <p className="text-sm font-semibold">Instala FARMACIA</p>
             {showAndroid ? (
               <p className="mt-1 text-xs text-white/75">
                 Acceso rápido desde tu pantalla de inicio, como una app.

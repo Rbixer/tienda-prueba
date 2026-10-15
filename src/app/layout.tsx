@@ -16,15 +16,15 @@ const display = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "MI BARRIO",
+  title: "FARMACIA",
   description:
-    "Sistema de inventario, POS y sucursales para tu tienda de barrio.",
-  applicationName: "MI BARRIO",
+    "Inventario y mostrador para tu farmacia.",
+  applicationName: "FARMACIA",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "MI BARRIO",
+    title: "FARMACIA",
   },
   formatDetection: {
     telephone: false,
@@ -41,8 +41,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#0b2545" },
-    { media: "(prefers-color-scheme: dark)", color: "#0b2545" },
+    { media: "(prefers-color-scheme: light)", color: "#0b3d32" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b3d32" },
   ],
   width: "device-width",
   initialScale: 1,

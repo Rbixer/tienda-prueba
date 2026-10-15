@@ -4,7 +4,7 @@ import { formatMoney } from "@/lib/store";
 
 type Props = { sellers: SellerBucket[] };
 
-const colors = ["#2563eb", "#f97316", "#22c55e", "#0b2545"];
+const colors = ["#0f7a56", "#0e7490", "#145544", "#5c7266"];
 
 export function SellerSalesChart({ sellers }: Props) {
   if (sellers.length === 0) {

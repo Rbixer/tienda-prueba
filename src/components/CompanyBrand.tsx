@@ -1,5 +1,5 @@
 "use client";
-import { Store } from "lucide-react";
+import { Pill } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 export function CompanyBrand({
@@ -20,7 +20,7 @@ export function CompanyBrand({
   className?: string;
 }) {
   const { data } = useAuth();
-  const settings = data.settings ?? { companyName: "MI BARRIO" };
+  const settings = data.settings ?? { companyName: "FARMACIA" };
   const hasLogo = Boolean(settings.logo);
   const bare = plain || (hasLogo && size === "xl");
 
@@ -73,7 +73,7 @@ export function CompanyBrand({
             className={`h-full w-full object-contain ${bare ? "p-0" : size === "xl" ? "p-3" : "p-1"}`}
           />
         ) : (
-          <Store
+          <Pill
             size={icon}
             className={variant === "dark" ? "text-white" : "text-[var(--navy)]"}
           />
@@ -85,7 +85,7 @@ export function CompanyBrand({
             variant === "dark" ? "text-white" : "text-[var(--navy)]"
           }`}
         >
-          {settings.companyName}
+          {settings.companyName?.trim() || "FARMACIA"}
         </span>
       ) : null}
     </div>

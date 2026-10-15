@@ -2,6 +2,7 @@ import {
   defaultPermissionsForRole,
   normalizeUser,
 } from "./permissions";
+import { ensureLots } from "./stock";
 import type {
   Branch,
   CompanySettings,
@@ -10,7 +11,9 @@ import type {
   Product,
   Sale,
   SaleItem,
+  CashShift,
   StoreData,
+  Transfer,
   User,
 } from "./types";
 
@@ -23,10 +26,10 @@ export const REMEMBER_LOGIN_KEY = "tienda-barrio-remember-login-v2";
 export const BODEGA_CENTRAL_ID = "bodega-central";
 
 export const DEFAULT_PDF_STYLE: PdfStyleSettings = {
-  companyName: { bold: true, italic: false, color: "#0b2545" },
-  slogan: { bold: false, italic: true, color: "#64748b" },
-  contact: { bold: false, italic: false, color: "#334155" },
-  accentColor: "#0b2545",
+  companyName: { bold: true, italic: false, color: "#0b3d32" },
+  slogan: { bold: false, italic: true, color: "#5c7266" },
+  contact: { bold: false, italic: false, color: "#3f5348" },
+  accentColor: "#0b3d32",
 };
 
 function normalizeTextStyle(
@@ -62,8 +65,8 @@ export function normalizePdfStyle(
 }
 
 export const DEFAULT_SETTINGS: CompanySettings = {
-  companyName: "MI BARRIO",
-  slogan: "Tu tienda de confianza en el barrio",
+  companyName: "FARMACIA",
+  slogan: "Tu salud, en buenas manos",
   address: "",
   phone: "",
   logo: undefined,
@@ -74,23 +77,13 @@ export const DEFAULT_BRANCHES: Branch[] = [
   {
     id: BODEGA_CENTRAL_ID,
     name: "Bodega Central",
-    address: "Almacén principal · distribución a sucursales",
+    address: "Almacén principal",
     isWarehouse: true,
   },
   {
     id: "suc-1",
-    name: "Sucursal Centro",
-    address: "Av. Principal #120, Centro",
-  },
-  {
-    id: "suc-2",
-    name: "Sucursal Norte",
-    address: "Calle 8 #45, Col. Norte",
-  },
-  {
-    id: "suc-3",
-    name: "Sucursal Sur",
-    address: "Blvd. Sur #88, Col. Sur",
+    name: "Farmacia",
+    address: "Local único",
   },
 ];
 
@@ -121,8 +114,8 @@ export const DEFAULT_USERS: User[] = [
     username: "maria",
     password: "maria123",
     role: "vendedor",
-    branchId: "suc-2",
-    allowedBranchIds: ["suc-2"],
+    branchId: "suc-1",
+    allowedBranchIds: ["suc-1"],
     permissions: defaultPermissionsForRole("vendedor"),
   },
 ];
@@ -290,7 +283,7 @@ export const DEFAULT_PRODUCTS: Product[] = [
 
 /**
  * Catálogo base de abarrotería: [nombre, costo, precio venta, stock].
- * Se reparte entre las sucursales para tener un inventario realista.
+ * Catálogo de ejemplo para un inventario inicial.
  */
 const CATALOG_SEED: [string, number, number, number][] = [
   ["Coca-Cola 2.5L", 20, 28, 30],
@@ -398,9 +391,7 @@ const CATALOG_SEED: [string, number, number, number][] = [
 ];
 
 /** Distribución del catálogo: la mayoría al Centro, el resto a Norte y Sur. */
-function branchForIndex(i: number): string {
-  if (i % 5 === 3) return "suc-2";
-  if (i % 5 === 4) return "suc-3";
+function branchForIndex(_i: number): string {
   return "suc-1";
 }
 
@@ -497,7 +488,7 @@ export function categoryImageForName(name: string): string | undefined {
   return undefined;
 }
 
-/** Genera el catálogo completo (100+ productos) repartido por sucursal. */
+/** Genera el catálogo completo (100+ productos). */
 export function createCatalogProducts(): Product[] {
   const now = nowIso();
   return CATALOG_SEED.map(([name, costPrice, price, quantity], i) => ({
@@ -621,6 +612,81 @@ export function createInitialData(): StoreData {
   });
 }
 
+/** Deja la bodega y un solo punto de venta. El stock de los demás locales se suma ahí. */
+function collapseToSingleStore(input: {
+  branches: Branch[];
+  users: User[];
+  products: Product[];
+  sales: Sale[];
+  transfers: Transfer[];
+}): {
+  branches: Branch[];
+  users: User[];
+  products: Product[];
+  sales: Sale[];
+  transfers: Transfer[];
+} {
+  const warehouse =
+    input.branches.find((b) => b.isWarehouse || b.id === BODEGA_CENTRAL_ID) ??
+    DEFAULT_BRANCHES[0];
+  const stores = input.branches.filter((b) => !b.isWarehouse && b.id !== warehouse.id);
+  const main = stores.find((b) => b.id === "suc-1") ?? stores[0] ?? DEFAULT_BRANCHES[1];
+  const retired = new Set(stores.filter((b) => b.id !== main.id).map((b) => b.id));
+  const mapId = (id: string) => (retired.has(id) ? main.id : id);
+
+  const products: Product[] = [];
+  for (const product of input.products) {
+    const next = { ...product, branchId: mapId(product.branchId) };
+    const barcode = next.barcode?.trim();
+    const idx = barcode
+      ? products.findIndex(
+          (p) => p.branchId === next.branchId && p.barcode === barcode,
+        )
+      : -1;
+    if (idx >= 0) {
+      const current = ensureLots(products[idx]);
+      const incoming = ensureLots(next);
+      products[idx] = {
+        ...current,
+        lots: [...(current.lots ?? []), ...(incoming.lots ?? [])],
+      };
+      continue;
+    }
+    products.push(next);
+  }
+
+  const pharmacy = {
+    ...main,
+    name: "Farmacia",
+    address: /sucursal/i.test(main.address ?? "")
+      ? "Local único"
+      : main.address || "Local único",
+  };
+  const bodega = {
+    ...warehouse,
+    name: /sucursal/i.test(warehouse.name) ? "Bodega Central" : warehouse.name,
+    isWarehouse: true as const,
+  };
+
+  return {
+    branches: [bodega, pharmacy],
+    users: input.users.map((user) =>
+      normalizeUser({
+        ...user,
+        branchId: main.id,
+        allowedBranchIds: user.role === "administrador" ? [] : [main.id],
+      }),
+    ),
+    products,
+    sales: input.sales.map((sale) => ({ ...sale, branchId: mapId(sale.branchId) })),
+    transfers: input.transfers.map((transfer) => ({
+      ...transfer,
+      fromBranchId: mapId(transfer.fromBranchId),
+      toBranchId: mapId(transfer.toBranchId),
+    })),
+  };
+}
+
 /** Normaliza datos viejos sin settings/transfers/bodega. */
 export function normalizeStoreData(raw: Partial<StoreData> & {
   branches?: Branch[];
@@ -633,7 +699,7 @@ export function normalizeStoreData(raw: Partial<StoreData> & {
     branches.unshift({
       id: BODEGA_CENTRAL_ID,
       name: "Bodega Central",
-      address: "Almacén principal · distribución a sucursales",
+      address: "Almacén principal",
       isWarehouse: true,
     });
   } else {
@@ -646,28 +712,62 @@ export function normalizeStoreData(raw: Partial<StoreData> & {
       permissions: u.permissions ?? defaultPermissionsForRole(u.role),
     }),
   );
-  return {
-    version:
-      typeof raw.version === "number" && Number.isFinite(raw.version)
-        ? Math.max(0, Math.floor(raw.version))
-        : 0,
+  const single = collapseToSingleStore({
     branches,
     users,
     products: raw.products ?? [],
     sales: raw.sales ?? [],
     transfers: raw.transfers ?? [],
+  });
+  return {
+    version:
+      typeof raw.version === "number" && Number.isFinite(raw.version)
+        ? Math.max(0, Math.floor(raw.version))
+        : 0,
+    branches: single.branches,
+    users: single.users,
+    products: single.products.map((product) => ensureLots(product)),
+    sales: single.sales,
+    transfers: single.transfers,
     suppliers: raw.suppliers ?? [],
     supplierPayments: raw.supplierPayments ?? [],
+    purchaseOrders: raw.purchaseOrders ?? [],
+    cashShifts: raw.cashShifts ?? [],
+    invoices: raw.invoices ?? [],
     settings: {
-      companyName: raw.settings?.companyName?.trim() || DEFAULT_SETTINGS.companyName,
+      companyName:
+        typeof raw.settings?.companyName === "string"
+          ? raw.settings.companyName.trim()
+          : DEFAULT_SETTINGS.companyName,
       slogan:
-        raw.settings?.slogan?.trim() ||
-        DEFAULT_SETTINGS.slogan ||
-        undefined,
+        typeof raw.settings?.slogan === "string"
+          ? raw.settings.slogan.trim()
+          : DEFAULT_SETTINGS.slogan,
       address: raw.settings?.address?.trim() || undefined,
       phone: raw.settings?.phone?.trim() || undefined,
       logo: raw.settings?.logo || undefined,
       pdfStyle: normalizePdfStyle(raw.settings?.pdfStyle),
+      nit: raw.settings?.nit?.trim() || undefined,
+      invoiceSeries:
+        typeof raw.settings?.invoiceSeries === "string"
+          ? raw.settings.invoiceSeries.trim()
+          : "A",
+      nextInvoiceNumber:
+        typeof raw.settings?.nextInvoiceNumber === "number" &&
+        raw.settings.nextInvoiceNumber >= 1
+          ? Math.floor(raw.settings.nextInvoiceNumber)
+          : 1,
+      cashFloatMode:
+        raw.settings?.cashFloatMode === "fija" ||
+        raw.settings?.cashFloatMode === "libre"
+          ? raw.settings.cashFloatMode
+          : undefined,
+      cashFloat:
+        typeof raw.settings?.cashFloat === "number" &&
+        Number.isFinite(raw.settings.cashFloat) &&
+        raw.settings.cashFloat >= 0
+          ? Math.round(raw.settings.cashFloat * 100) / 100
+          : undefined,
     },
   };
 }
@@ -695,4 +795,37 @@ export function formatDate(value: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+/** Día local YYYY-MM-DD. El cierre de caja sigue el calendario del mostrador. */
+export function calendarDay(value: Date | string = new Date()): string {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/** La cuota fija bloquea el monto de apertura. Sin modo guardado, un fondo ya definido se trata como fijo. */
+export function isCashFloatLocked(settings: {
+  cashFloatMode?: "fija" | "libre";
+  cashFloat?: number;
+}): boolean {
+  if (settings.cashFloatMode === "libre") return false;
+  if (settings.cashFloatMode === "fija") return true;
+  return typeof settings.cashFloat === "number";
+}
+
+/** True si hoy ya hubo un corte de caja en esa ubicación. */
+export function isCashDayClosed(
+  shifts: CashShift[] | undefined,
+  branchId: string,
+  now: Date = new Date(),
+): boolean {
+  const today = calendarDay(now);
+  return (shifts ?? []).some(
+    (shift) =>
+      shift.branchId === branchId &&
+      Boolean(shift.closedAt) &&
+      calendarDay(shift.closedAt as string) === today,
+  );
 }

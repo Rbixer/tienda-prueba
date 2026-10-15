@@ -39,7 +39,7 @@ export const PERMISSION_CATALOG: PermissionMeta[] = [
   {
     id: "bodega",
     label: "Bodega",
-    description: "Traslados entre sucursales",
+    description: "Traslados desde la bodega",
     defaultForSeller: false,
     adminModule: true,
   },
@@ -47,13 +47,6 @@ export const PERMISSION_CATALOG: PermissionMeta[] = [
     id: "proveedores",
     label: "Proveedores",
     description: "Proveedores y pagos",
-    defaultForSeller: false,
-    adminModule: true,
-  },
-  {
-    id: "sucursales",
-    label: "Sucursales",
-    description: "Administrar sucursales",
     defaultForSeller: false,
     adminModule: true,
   },
@@ -67,7 +60,7 @@ export const PERMISSION_CATALOG: PermissionMeta[] = [
   {
     id: "configuracion",
     label: "Configuración",
-    description: "Logo y datos de la empresa",
+    description: "Empresa, usuarios y datos del negocio",
     defaultForSeller: false,
     adminModule: true,
   },
@@ -89,8 +82,6 @@ export function normalizePermissions(
   const list = (permissions ?? defaultPermissionsForRole("vendedor")).filter(
     (p) => allowed.has(p),
   );
-  // Dashboard siempre disponible para no dejar al usuario sin inicio
-  if (!list.includes("dashboard")) list.unshift("dashboard");
   return Array.from(new Set(list));
 }
 
@@ -104,7 +95,9 @@ export function hasPermission(
 }
 
 export function canManageUsers(session: Session | null | undefined): boolean {
-  return hasPermission(session, "usuarios");
+  return (
+    hasPermission(session, "usuarios") || hasPermission(session, "configuracion")
+  );
 }
 
 /** Tiendas visibles: admin vacío = todas; vendedor siempre incluye su branchId. */

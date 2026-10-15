@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Lock, UserRound } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { CompanyBrand } from "@/components/CompanyBrand";
-import { safeAppPath } from "@/lib/nav";
+import { resolveLandingPath } from "@/lib/nav";
 import { REMEMBER_LOGIN_KEY } from "@/lib/store";
 
 function loadRemembered(): { username: string; remember: boolean } {
@@ -25,13 +25,13 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { ready, session, login, data } = useAuth();
-  const companyName = data.settings?.companyName ?? "MI BARRIO";
+  const companyName = data.settings?.companyName?.trim() || "FARMACIA";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const nextPath = safeAppPath(searchParams.get("next"));
+  const nextPath = resolveLandingPath(session, searchParams.get("next"));
 
   useEffect(() => {
     const saved = loadRemembered();
@@ -90,7 +90,7 @@ function LoginForm() {
             plain
           />
           <p className="login-unity__tagline">
-            Ventas, inventario y sucursales en un solo lugar.
+            Mostrador e inventario en un solo lugar.
           </p>
         </header>
 

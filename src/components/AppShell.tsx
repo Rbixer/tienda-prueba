@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, LogOut, MapPin, Settings } from "lucide-react";
+import { ChevronDown, LogOut, Settings } from "lucide-react";
 import { hasPermission } from "@/lib/permissions";
 import { useAuth } from "@/context/AuthContext";
+import { AlertsButton } from "@/components/AlertsButton";
+import { CashShiftPrompt } from "@/components/CashShiftPrompt";
 import { BottomNav } from "@/components/BottomNav";
 import { CompanyBrand } from "@/components/CompanyBrand";
 import { SideNav } from "@/components/SideNav";
@@ -57,7 +59,7 @@ function ProfileMenu({
         aria-haspopup="menu"
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#171a21] text-xs font-bold text-white">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--navy)] text-xs font-bold text-white">
           {(name[0] ?? "U").toUpperCase()}
         </span>
         {!compact ? (
@@ -136,7 +138,6 @@ export function AppShell({
     ready,
     session,
     logout,
-    currentBranchName,
     syncError,
     isOnline,
     pendingSync,
@@ -147,10 +148,8 @@ export function AppShell({
     retryOfflineSale,
     discardOfflineSale,
     data,
-    visibleBranches,
-    setActiveBranch,
   } = useAuth();
-  const companyName = data.settings?.companyName ?? "MI BARRIO";
+  const companyName = data.settings?.companyName?.trim() || "FARMACIA";
   const canConfig = hasPermission(session, "configuracion");
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [showConflictDetail, setShowConflictDetail] = useState(true);
@@ -208,27 +207,11 @@ export function AppShell({
               <h1 className="truncate font-[family-name:var(--font-display)] text-[1.05rem] font-semibold leading-tight">
                 {title}
               </h1>
-              <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-[var(--muted)]">
-                <MapPin size={11} className="shrink-0" />
-                {visibleBranches.length > 1 ? (
-                  <select
-                    className="max-w-full truncate bg-transparent font-medium text-[var(--ink)] outline-none"
-                    value={session.branchId}
-                    onChange={(e) => setActiveBranch(e.target.value)}
-                    aria-label="Cambiar tienda"
-                  >
-                    {visibleBranches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="truncate">
-                    {subtitle ?? currentBranchName}
-                  </span>
-                )}
-              </div>
+              {subtitle ? (
+                <p className="mt-0.5 truncate text-[11px] text-[var(--muted)]">
+                  {subtitle}
+                </p>
+              ) : null}
             </div>
             <ProfileMenu
               compact
@@ -252,28 +235,6 @@ export function AppShell({
               ) : null}
             </div>
             <div className="flex items-center gap-2">
-              {visibleBranches.length > 1 ? (
-                <label className="flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--bg-soft)] px-2.5 py-1.5 text-xs text-[var(--muted)]">
-                  <MapPin size={13} className="shrink-0" />
-                  <select
-                    className="max-w-[11rem] bg-transparent text-sm font-semibold text-[var(--ink)] outline-none"
-                    value={session.branchId}
-                    onChange={(e) => setActiveBranch(e.target.value)}
-                    aria-label="Cambiar tienda"
-                  >
-                    {visibleBranches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <span className="hidden items-center gap-1 text-xs text-[var(--muted)] lg:inline-flex">
-                  <MapPin size={12} />
-                  {currentBranchName}
-                </span>
-              )}
               <ProfileMenu
                 name={session.name}
                 role={session.role}
@@ -400,6 +361,8 @@ export function AppShell({
           </div>
         </main>
         <BottomNav />
+        <AlertsButton />
+        <CashShiftPrompt />
       </div>
     </div>
   );

@@ -1,19 +1,19 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f4f6f9;
-  --bg-soft: #eef1f6;
+  --bg: #f3f6f4;
+  --bg-soft: #e6efe9;
   --surface: #ffffff;
-  --ink: #1e293b;
-  --muted: #64748b;
-  --line: #e5e9f0;
-  --navy: #0b2545;
-  --navy-soft: #14355f;
-  --brand: #2563eb;
-  --brand-dark: #1d4ed8;
-  --brand-soft: #eff6ff;
-  --accent: #f97316;
-  --accent-soft: #fff7ed;
+  --ink: #13261c;
+  --muted: #5c7266;
+  --line: #d3e2d9;
+  --navy: #0b3d32;
+  --navy-soft: #145544;
+  --brand: #0f7a56;
+  --brand-dark: #0c6245;
+  --brand-soft: #e7f5ee;
+  --accent: #0e7490;
+  --accent-soft: #ecfeff;
   --success: #22c55e;
   --success-soft: #f0fdf4;
   --warn: #eab308;
@@ -66,13 +66,13 @@ body {
 /* Evita flash blanco al abrir la PWA instalada */
 html.pwa-splash-pending,
 html.pwa-splash-pending body {
-  background: #0b2545;
+  background: #0b3d32;
 }
 
 @media (display-mode: standalone) {
   html.pwa-splash-pending,
   html.pwa-splash-pending body {
-    background: #0b2545;
+    background: #0b3d32;
   }
 }
 
@@ -85,7 +85,7 @@ html.pwa-splash-pending body {
   align-items: center;
   justify-content: center;
   gap: 0.85rem;
-  background: #0b2545;
+  background: #0b3d32;
   color: #fff;
   transition: opacity 0.28s ease, visibility 0.28s ease;
 }
@@ -264,7 +264,7 @@ h3 {
     max(1rem, env(safe-area-inset-right))
     max(0.75rem, env(safe-area-inset-bottom))
     max(1rem, env(safe-area-inset-left));
-  background: #071a31;
+  background: #07281f;
   color: #fff;
 }
 
@@ -273,9 +273,9 @@ h3 {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(90% 70% at 50% -10%, rgba(37, 99, 235, 0.38), transparent 55%),
-    radial-gradient(70% 60% at 100% 100%, rgba(14, 165, 233, 0.16), transparent 50%),
-    linear-gradient(165deg, #061526 0%, #0b2545 52%, #123a66 100%);
+    radial-gradient(90% 70% at 50% -10%, rgba(16, 185, 129, 0.32), transparent 55%),
+    radial-gradient(70% 60% at 100% 100%, rgba(15, 118, 110, 0.2), transparent 50%),
+    linear-gradient(165deg, #06241c 0%, #0b3d32 52%, #14624d 100%);
 }
 
 .login-unity__orb {
@@ -289,7 +289,7 @@ h3 {
   height: min(28rem, 70vw);
   top: -8rem;
   left: -6rem;
-  background: rgba(37, 99, 235, 0.32);
+  background: rgba(16, 185, 129, 0.28);
   animation: loginUnityDrift 14s ease-in-out infinite;
 }
 
@@ -298,7 +298,7 @@ h3 {
   height: min(24rem, 65vw);
   right: -5rem;
   bottom: -7rem;
-  background: rgba(56, 189, 248, 0.14);
+  background: rgba(45, 212, 191, 0.16);
   animation: loginUnityDriftAlt 16s ease-in-out infinite;
 }
 
@@ -368,7 +368,7 @@ h3 {
   font-size: clamp(1.2rem, 2.4vh, 1.45rem);
   font-weight: 650;
   letter-spacing: -0.03em;
-  color: #0b2545;
+  color: #0b3d32;
 }
 
 .login-unity__form-head p {
@@ -422,9 +422,9 @@ h3 {
 }
 
 .login-unity__input input:focus {
-  border-color: #60a5fa;
+  border-color: #34d399;
   background: #fff;
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+  box-shadow: 0 0 0 4px rgba(15, 122, 86, 0.16);
 }
 
 .login-unity__remember {
@@ -441,7 +441,7 @@ h3 {
 .login-unity__remember input {
   width: 1rem;
   height: 1rem;
-  accent-color: #2563eb;
+  accent-color: #0f7a56;
   cursor: pointer;
 }
 
@@ -464,13 +464,13 @@ h3 {
   margin-top: 0.1rem;
   border: 0;
   border-radius: 0.9rem;
-  background: linear-gradient(180deg, #3b82f6, #2563eb 55%, #1d4ed8);
+  background: linear-gradient(180deg, #14956a, #0f7a56 55%, #0c6245);
   color: #fff;
   font-size: 0.92rem;
   font-weight: 700;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.22) inset,
-    0 12px 24px rgba(37, 99, 235, 0.28);
+    0 12px 24px rgba(15, 122, 86, 0.28);
   transition:
     transform 0.15s ease,
     filter 0.15s ease;

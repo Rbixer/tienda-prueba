@@ -69,6 +69,27 @@ describe("applyCheckout", () => {
     expect(result.store?.sales).toHaveLength(1);
   });
 
+  it("exige efectivo suficiente", () => {
+    const short = applyCheckout(
+      baseStore(),
+      session,
+      [{ productId: "prod-1", name: "Agua", price: 5, quantity: 2 }],
+      { method: "efectivo", amountReceived: 5 },
+    );
+    expect(short.error).toMatch(/no cubre/);
+    expect(short.store).toBeUndefined();
+
+    const paid = applyCheckout(
+      baseStore(),
+      session,
+      [{ productId: "prod-1", name: "Agua", price: 5, quantity: 2 }],
+      { method: "efectivo", amountReceived: 20 },
+    );
+    expect(paid.error).toBeNull();
+    expect(paid.sale?.change).toBe(10);
+    expect(paid.sale?.paymentMethod).toBe("efectivo");
+  });
+
   it("rechaza stock insuficiente", () => {
     const result = applyCheckout(baseStore(), session, [
       { productId: "prod-1", name: "Agua", price: 5, quantity: 99 },
@@ -98,6 +119,6 @@ describe("applyCheckout", () => {
     const result = applyCheckout(baseStore(), warehouseSession, [
       { productId: "prod-1", name: "Agua", price: 5, quantity: 1 },
     ]);
-    expect(result.error).toMatch(/Bodega Central/);
+    expect(result.error).toMatch(/bodega/);
   });
 });

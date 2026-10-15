@@ -9,6 +9,7 @@ import {
   Palette,
   Settings,
   Trash2,
+  Wallet,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { GuardAdmin } from "@/components/GuardAdmin";
@@ -20,8 +21,9 @@ import {
   inputClass,
 } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
+import { UsersPanel } from "@/components/UsersPanel";
 import { compressImageFile } from "@/lib/image";
-import { DEFAULT_PDF_STYLE, normalizePdfStyle } from "@/lib/store";
+import { DEFAULT_PDF_STYLE, isCashFloatLocked, normalizePdfStyle } from "@/lib/store";
 import type { PdfStyleSettings, PdfTextStyle } from "@/lib/types";
 
 function PasswordField({
@@ -160,8 +162,12 @@ export default function ConfiguracionPage() {
   const [slogan, setSlogan] = useState("");
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
+  const [nit, setNit] = useState("");
+  const [invoiceSeries, setInvoiceSeries] = useState("");
   const [logo, setLogo] = useState<string | null>(null);
   const [pdfStyle, setPdfStyle] = useState<PdfStyleSettings>(DEFAULT_PDF_STYLE);
+  const [cashMode, setCashMode] = useState<"fija" | "libre">("libre");
+  const [cashAmount, setCashAmount] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -169,14 +175,20 @@ export default function ConfiguracionPage() {
 
   useEffect(() => {
     if (hydrated) return;
-    setCompanyName(data.settings?.companyName ?? "MI BARRIO");
-    setSlogan(
-      data.settings?.slogan ?? "Tu tienda de confianza en el barrio",
-    );
+    setCompanyName(data.settings?.companyName ?? "");
+    setSlogan(data.settings?.slogan ?? "");
     setAddress(data.settings?.address ?? "");
     setPhone(data.settings?.phone ?? "");
+    setNit(data.settings?.nit ?? "");
+    setInvoiceSeries(data.settings?.invoiceSeries ?? "");
     setLogo(data.settings?.logo ?? null);
     setPdfStyle(normalizePdfStyle(data.settings?.pdfStyle));
+    setCashMode(isCashFloatLocked(data.settings ?? {}) ? "fija" : "libre");
+    setCashAmount(
+      typeof data.settings?.cashFloat === "number"
+        ? String(data.settings.cashFloat)
+        : "",
+    );
     setHydrated(true);
   }, [data.settings, hydrated]);
 
@@ -207,13 +219,23 @@ export default function ConfiguracionPage() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
+    const quota = Number(cashAmount);
+    if (cashMode === "fija" && (!cashAmount.trim() || !Number.isFinite(quota) || quota < 0)) {
+      setError("Indica la cuota fija de la caja.");
+      setOk(null);
+      return;
+    }
     const err = updateSettings({
       companyName,
       slogan,
       address,
       phone,
+      nit,
+      invoiceSeries,
       logo: logo ?? null,
       pdfStyle,
+      cashFloatMode: cashMode,
+      cashFloat: cashMode === "fija" ? quota : undefined,
     });
     if (err) {
       setError(err);
@@ -231,7 +253,7 @@ export default function ConfiguracionPage() {
   return (
     <AppShell
       title="Configuración"
-      subtitle="Datos de la empresa, contacto y estilos tipográficos para los PDFs."
+      subtitle="Empresa, caja y documentos."
     >
       <GuardAdmin>
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
@@ -257,7 +279,7 @@ export default function ConfiguracionPage() {
                     className={inputClass}
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
-                    required
+                    placeholder="Nombre de la farmacia"
                   />
                 </Field>
 
@@ -266,7 +288,7 @@ export default function ConfiguracionPage() {
                     className={inputClass}
                     value={slogan}
                     onChange={(e) => setSlogan(e.target.value)}
-                    placeholder="Tu tienda de confianza en el barrio"
+                    placeholder="Tu salud, en buenas manos"
                     maxLength={80}
                   />
                 </Field>
@@ -320,6 +342,67 @@ export default function ConfiguracionPage() {
 
             <Panel>
               <div className="mb-4 flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[var(--brand-soft)] text-[var(--brand)]">
+                  <Wallet size={18} />
+                </span>
+                <div>
+                  <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+                    Apertura de caja
+                  </h2>
+                  <p className="text-xs text-[var(--muted)]">
+                    Cuota fija bloqueada o monto libre cada día
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-1 rounded-xl bg-[var(--slate-soft)] p-1 ring-1 ring-[var(--line)]">
+                <button
+                  type="button"
+                  onClick={() => setCashMode("fija")}
+                  className={`min-h-10 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                    cashMode === "fija"
+                      ? "bg-[var(--navy)] text-white shadow-[0_2px_8px_rgba(11,37,69,0.25)]"
+                      : "text-[var(--muted)] hover:text-[var(--navy)]"
+                  }`}
+                >
+                  Cuota fija
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCashMode("libre")}
+                  className={`min-h-10 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                    cashMode === "libre"
+                      ? "bg-[var(--navy)] text-white shadow-[0_2px_8px_rgba(11,37,69,0.25)]"
+                      : "text-[var(--muted)] hover:text-[var(--navy)]"
+                  }`}
+                >
+                  Libre
+                </button>
+              </div>
+              {cashMode === "fija" ? (
+                <div className="mt-4">
+                  <Field label="Cuota fija">
+                    <input
+                      className={inputClass}
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={cashAmount}
+                      onChange={(e) => setCashAmount(e.target.value)}
+                      required
+                    />
+                  </Field>
+                  <p className="mt-2 text-xs text-[var(--muted)]">
+                    Este monto queda bloqueado. Al aperturar solo se confirma y no se puede cambiar.
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-4 text-xs text-[var(--muted)]">
+                  Cada día se escribe el fondo al aperturar. El monto no queda bloqueado.
+                </p>
+              )}
+            </Panel>
+
+            <Panel>
+              <div className="mb-4 flex items-center gap-2">
                 <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[var(--slate-soft)] text-[var(--navy)]">
                   <MapPin size={18} />
                 </span>
@@ -351,7 +434,28 @@ export default function ConfiguracionPage() {
                     maxLength={40}
                   />
                 </Field>
+                <Field label="NIT emisor">
+                  <input
+                    className={inputClass}
+                    value={nit}
+                    onChange={(e) => setNit(e.target.value)}
+                    placeholder="NIT del establecimiento"
+                    maxLength={20}
+                  />
+                </Field>
+                <Field label="Serie de factura">
+                  <input
+                    className={inputClass}
+                    value={invoiceSeries}
+                    onChange={(e) => setInvoiceSeries(e.target.value)}
+                    placeholder="A"
+                    maxLength={8}
+                  />
+                </Field>
               </div>
+              <p className="mt-3 text-xs text-[var(--muted)]">
+                La factura es un comprobante interno. No sustituye la factura electrónica certificada por la SAT hasta contratar un certificador.
+              </p>
             </Panel>
 
             <Panel>
@@ -374,7 +478,7 @@ export default function ConfiguracionPage() {
                   <div className="flex items-center gap-3">
                     <input
                       type="color"
-                      value={pdfStyle.accentColor ?? "#0b2545"}
+                      value={pdfStyle.accentColor ?? "#0b3d32"}
                       onChange={(e) =>
                         setPdfStyle((p) => ({
                           ...p,
@@ -385,7 +489,7 @@ export default function ConfiguracionPage() {
                     />
                     <input
                       className={`${inputClass} max-w-[9rem] font-mono uppercase`}
-                      value={pdfStyle.accentColor ?? "#0b2545"}
+                      value={pdfStyle.accentColor ?? "#0b3d32"}
                       onChange={(e) =>
                         setPdfStyle((p) => ({
                           ...p,
@@ -420,7 +524,7 @@ export default function ConfiguracionPage() {
               <div className="mt-5 overflow-hidden rounded-xl border border-[var(--line)] bg-white">
                 <div
                   className="h-1.5 w-full"
-                  style={{ background: pdfStyle.accentColor ?? "#0b2545" }}
+                  style={{ background: pdfStyle.accentColor ?? "#0b3d32" }}
                 />
                 <div className="flex gap-3 p-4">
                   {logo ? (
@@ -439,7 +543,7 @@ export default function ConfiguracionPage() {
                     <p
                       className="truncate text-lg leading-tight"
                       style={{
-                        color: pdfStyle.companyName?.color ?? "#0b2545",
+                        color: pdfStyle.companyName?.color ?? "#0b3d32",
                         fontWeight: pdfStyle.companyName?.bold ? 700 : 500,
                         fontStyle: pdfStyle.companyName?.italic
                           ? "italic"
@@ -500,6 +604,7 @@ export default function ConfiguracionPage() {
             </button>
           </form>
 
+          <UsersPanel />
           <ChangePasswordPanel />
         </div>
       </GuardAdmin>
@@ -546,14 +651,14 @@ function StyleRow({
         </button>
         <input
           type="color"
-          value={style?.color ?? "#0b2545"}
+          value={style?.color ?? "#0b3d32"}
           onChange={(e) => onChange({ color: e.target.value })}
           className="h-9 w-11 cursor-pointer rounded-lg border border-[var(--line)] bg-white p-1"
           title="Color"
         />
         <input
           className={`${inputClass} !py-2 max-w-[7.5rem] font-mono text-xs uppercase`}
-          value={style?.color ?? "#0b2545"}
+          value={style?.color ?? "#0b3d32"}
           onChange={(e) => onChange({ color: e.target.value })}
           maxLength={7}
         />
