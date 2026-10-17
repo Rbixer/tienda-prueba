@@ -47,10 +47,10 @@ const BARCODE_KEYS = [
   "barra",
   "ean",
 ];
-const GENERIC_KEYS = ["principio activo", "generico", "genérico", "droga"];
+const GENERIC_KEYS = ["marca", "principio activo", "generico", "genérico", "droga"];
 const PRESENTATION_KEYS = ["presentacion", "presentación"];
-const CONCENTRATION_KEYS = ["concentracion", "concentración", "dosis"];
-const LAB_KEYS = ["laboratorio", "lab"];
+const CONCENTRATION_KEYS = ["contenido", "concentracion", "concentración", "dosis"];
+const LAB_KEYS = ["proveedor", "laboratorio", "lab"];
 const LOT_KEYS = ["lote", "lot", "batch"];
 const EXPIRY_KEYS = ["vencimiento", "vence", "caducidad", "expira"];
 const CATEGORY_KEYS = ["categoria", "categoría"];
@@ -291,7 +291,7 @@ export async function downloadInventoryExcel(
   },
 ) {
   const XLSX = await import("xlsx-js-style");
-  const companyName = opts?.companyName?.trim() || "FARMACIA";
+  const companyName = opts?.companyName?.trim() || "TIENDA";
   const slogan = opts?.slogan?.trim();
   const address = opts?.address?.trim();
   const phone = opts?.phone?.trim();
@@ -307,10 +307,10 @@ export async function downloadInventoryExcel(
     "Precio costo",
     "Precio venta",
     "Código de barras",
-    "Principio activo",
+    "Marca",
     "Presentación",
-    "Concentración",
-    "Laboratorio",
+    "Contenido",
+    "Proveedor",
     "Lote",
     "Vencimiento",
     "Categoría",

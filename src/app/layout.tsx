@@ -16,15 +16,15 @@ const display = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "FARMACIA",
+  title: "TIENDA",
   description:
-    "Inventario y mostrador para tu farmacia.",
-  applicationName: "FARMACIA",
+    "Inventario y mostrador para tu tienda de consumo diario.",
+  applicationName: "TIENDA",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "FARMACIA",
+    title: "TIENDA",
   },
   formatDetection: {
     telephone: false,
@@ -41,8 +41,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#0b3d32" },
-    { media: "(prefers-color-scheme: dark)", color: "#0b3d32" },
+    { media: "(prefers-color-scheme: light)", color: "#3b2418" },
+    { media: "(prefers-color-scheme: dark)", color: "#3b2418" },
   ],
   width: "device-width",
   initialScale: 1,

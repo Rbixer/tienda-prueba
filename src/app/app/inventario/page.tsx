@@ -100,8 +100,6 @@ export default function InventarioPage() {
   const [lot, setLot] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [category, setCategory] = useState<PharmacyCategory | "">("");
-  const [requiresPrescription, setRequiresPrescription] = useState(false);
-  const [controlled, setControlled] = useState(false);
   const [minStock, setMinStock] = useState("5");
   const [unitsPerBox, setUnitsPerBox] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
@@ -135,8 +133,6 @@ export default function InventarioPage() {
     setLot("");
     setExpiresAt("");
     setCategory("");
-    setRequiresPrescription(false);
-    setControlled(false);
     setMinStock("5");
     setUnitsPerBox("");
     setUnitPrice("");
@@ -161,8 +157,6 @@ export default function InventarioPage() {
     setLot("");
     setExpiresAt("");
     setCategory("");
-    setRequiresPrescription(false);
-    setControlled(false);
     setMinStock("5");
     setUnitsPerBox("");
     setUnitPrice("");
@@ -186,8 +180,6 @@ export default function InventarioPage() {
     setLot(product.lot ?? "");
     setExpiresAt(product.expiresAt ?? "");
     setCategory(product.category ?? "");
-    setRequiresPrescription(Boolean(product.requiresPrescription));
-    setControlled(Boolean(product.controlled));
     setMinStock(String(product.minStock ?? 5));
     setUnitsPerBox(product.unitsPerBox ? String(product.unitsPerBox) : "");
     setUnitPrice(product.unitPrice !== undefined ? String(product.unitPrice) : "");
@@ -226,17 +218,13 @@ export default function InventarioPage() {
     const duplicate = editing
       ? undefined
       : branchProducts.find((product) => product.barcode === barcode.trim());
-    if (!editing && !duplicate && !image) {
-      setError("Agrega una fotografía del producto.");
-      return;
-    }
     const extras = {
       minStock: Number(minStock || 5),
       unitsPerBox: unitsPerBox ? Number(unitsPerBox) : undefined,
       unitPrice: unitPrice ? Number(unitPrice) : undefined,
       unitsPerBlister: unitsPerBlister ? Number(unitsPerBlister) : undefined,
       blisterPrice: blisterPrice ? Number(blisterPrice) : undefined,
-      controlled,
+      controlled: false,
     };
     const payload = {
       name,
@@ -251,8 +239,8 @@ export default function InventarioPage() {
       lot,
       expiresAt,
       category: category || undefined,
-      requiresPrescription,
-      image: image ?? undefined,
+      requiresPrescription: false,
+      image,
       ...extras,
     };
     const err = duplicate
@@ -263,8 +251,8 @@ export default function InventarioPage() {
           costPrice: Number(costPrice),
         })
       : editing
-        ? updateProduct(editing.id, { ...payload, image: image ?? undefined })
-        : addProduct({ ...payload, image: image ?? undefined });
+        ? updateProduct(editing.id, payload)
+        : addProduct(payload);
     if (err) {
       setError(err);
       return;
@@ -362,7 +350,7 @@ export default function InventarioPage() {
       {({ openCamera, busy }) => (
     <AppShell
       title="Inventario"
-      subtitle="Medicamentos, lotes y vencimientos."
+      subtitle="Productos, existencias y vencimientos."
     >
       <Panel className="flex min-h-0 flex-1 flex-col">
         <div className="mb-3 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -508,11 +496,6 @@ export default function InventarioPage() {
                             {categoryLabel(product.category)}
                           </span>
                         ) : null}
-                        {product.requiresPrescription ? (
-                          <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
-                            Receta
-                          </span>
-                        ) : null}
                         {expiryBadge(product.expiresAt) ? (
                           <span
                             className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${expiryBadge(product.expiresAt)?.className}`}
@@ -618,11 +601,6 @@ export default function InventarioPage() {
                           {product.category ? (
                             <span className="rounded-md bg-[var(--brand-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--brand)]">
                               {categoryLabel(product.category)}
-                            </span>
-                          ) : null}
-                          {product.requiresPrescription ? (
-                            <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
-                              Receta
                             </span>
                           ) : null}
                           {expiryBadge(product.expiresAt) ? (
@@ -743,7 +721,7 @@ export default function InventarioPage() {
                   {editing ? "Editar producto" : "Ingreso de inventario"}
                 </h2>
                 <p className="mt-1 text-sm text-[var(--muted)]">
-                  Ficha del medicamento, lote y vencimiento.
+                  Ficha del producto. El lote y el vencimiento son opcionales.
                 </p>
               </div>
               <button
@@ -818,7 +796,7 @@ export default function InventarioPage() {
                           : "Tomar o subir fotografía"}
                       </span>
                       <span className="text-xs text-[var(--muted)]">
-                        Obligatoria para registrar el producto
+                        Opcional. Puedes registrar el producto sin foto.
                       </span>
                     </button>
                   )}
@@ -829,11 +807,9 @@ export default function InventarioPage() {
                   <select
                     className={`${inputClass} text-base sm:text-sm`}
                     value={category}
-                    onChange={(e) => {
-                      const next = e.target.value as PharmacyCategory | "";
-                      setCategory(next);
-                      if (next !== "medicamento") setRequiresPrescription(false);
-                    }}
+                    onChange={(e) =>
+                      setCategory(e.target.value as PharmacyCategory | "")
+                    }
                     required
                   >
                     <option value="">Selecciona</option>
@@ -844,25 +820,6 @@ export default function InventarioPage() {
                     ))}
                   </select>
                 </Field>
-                <label className="flex min-h-11 items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 text-sm">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-[var(--brand)]"
-                    checked={requiresPrescription}
-                    disabled={category !== "medicamento"}
-                    onChange={(e) => setRequiresPrescription(e.target.checked)}
-                  />
-                  Requiere receta
-                </label>
-                <label className="flex min-h-11 items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 text-sm">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-[var(--brand)]"
-                    checked={controlled}
-                    onChange={(e) => setControlled(e.target.checked)}
-                  />
-                  Controlado
-                </label>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <Field label="Mínimo">
@@ -896,7 +853,7 @@ export default function InventarioPage() {
                 </Field>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Unid. por blíster">
+                <Field label="Unid. por paquete">
                   <input
                     className={`${inputClass} text-base sm:text-sm`}
                     type="number"
@@ -906,7 +863,7 @@ export default function InventarioPage() {
                     placeholder="10"
                   />
                 </Field>
-                <Field label="Precio blíster">
+                <Field label="Precio paquete">
                   <input
                     className={`${inputClass} text-base sm:text-sm`}
                     type="number"
@@ -917,22 +874,21 @@ export default function InventarioPage() {
                   />
                 </Field>
               </div>
-              <Field label="Nombre comercial">
+              <Field label="Nombre">
                 <input
                   className={`${inputClass} text-base sm:text-sm`}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Ej. Acetaminofén MK"
+                  placeholder="Ej. Arroz precocido"
                   required
                 />
               </Field>
-              <Field label="Principio activo">
+              <Field label="Marca">
                 <input
                   className={`${inputClass} text-base sm:text-sm`}
                   value={genericName}
                   onChange={(e) => setGenericName(e.target.value)}
-                  placeholder="Ej. Paracetamol"
-                  required={category === "medicamento" || category === "otc"}
+                  placeholder="Ej. Diana"
                 />
               </Field>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -941,9 +897,8 @@ export default function InventarioPage() {
                     className={`${inputClass} text-base sm:text-sm`}
                     value={presentation}
                     onChange={(e) => setPresentation(e.target.value)}
-                    placeholder="Caja 10 tabletas"
+                    placeholder="Bolsa, botella, caja…"
                     list="presentaciones"
-                    required={category === "medicamento" || category === "otc"}
                   />
                   <datalist id="presentaciones">
                     {PRESENTATION_SUGGESTIONS.map((item) => (
@@ -951,21 +906,21 @@ export default function InventarioPage() {
                     ))}
                   </datalist>
                 </Field>
-                <Field label="Concentración">
+                <Field label="Contenido">
                   <input
                     className={`${inputClass} text-base sm:text-sm`}
                     value={concentration}
                     onChange={(e) => setConcentration(e.target.value)}
-                    placeholder="500 mg"
+                    placeholder="1 lb"
                   />
                 </Field>
               </div>
-              <Field label="Laboratorio">
+              <Field label="Proveedor">
                 <input
                   className={`${inputClass} text-base sm:text-sm`}
                   value={laboratory}
                   onChange={(e) => setLaboratory(e.target.value)}
-                  placeholder="Ej. MK"
+                  placeholder="Ej. Distribuidora local"
                 />
               </Field>
               <div className="grid grid-cols-2 gap-3">
@@ -975,7 +930,6 @@ export default function InventarioPage() {
                     value={lot}
                     onChange={(e) => setLot(e.target.value)}
                     placeholder="L24081"
-                    required={category === "medicamento" || category === "otc"}
                   />
                 </Field>
                 <Field label="Vencimiento">
@@ -984,7 +938,6 @@ export default function InventarioPage() {
                     type="date"
                     value={expiresAt}
                     onChange={(e) => setExpiresAt(e.target.value)}
-                    required={category === "medicamento" || category === "otc"}
                   />
                 </Field>
               </div>

@@ -37,15 +37,15 @@ export function SalesBarChart({ days }: Props) {
       >
         <defs>
           <linearGradient id="areaFillBlue" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#0f7a56" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#0f7a56" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="#e06a1f" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#e06a1f" stopOpacity="0.02" />
           </linearGradient>
         </defs>
         <path d={area} fill="url(#areaFillBlue)" />
         <path
           d={line}
           fill="none"
-          stroke="#0f7a56"
+          stroke="#e06a1f"
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -57,7 +57,7 @@ export function SalesBarChart({ days }: Props) {
             cy={p.y}
             r="3.2"
             fill="#fff"
-            stroke="#0f7a56"
+            stroke="#e06a1f"
             strokeWidth="2"
           >
             <title>

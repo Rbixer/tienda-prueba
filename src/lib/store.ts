@@ -26,10 +26,10 @@ export const REMEMBER_LOGIN_KEY = "tienda-barrio-remember-login-v2";
 export const BODEGA_CENTRAL_ID = "bodega-central";
 
 export const DEFAULT_PDF_STYLE: PdfStyleSettings = {
-  companyName: { bold: true, italic: false, color: "#0b3d32" },
-  slogan: { bold: false, italic: true, color: "#5c7266" },
-  contact: { bold: false, italic: false, color: "#3f5348" },
-  accentColor: "#0b3d32",
+  companyName: { bold: true, italic: false, color: "#3b2418" },
+  slogan: { bold: false, italic: true, color: "#7d6556" },
+  contact: { bold: false, italic: false, color: "#5c4638" },
+  accentColor: "#e06a1f",
 };
 
 function normalizeTextStyle(
@@ -65,8 +65,8 @@ export function normalizePdfStyle(
 }
 
 export const DEFAULT_SETTINGS: CompanySettings = {
-  companyName: "FARMACIA",
-  slogan: "Tu salud, en buenas manos",
+  companyName: "TIENDA",
+  slogan: "Lo del día, cerca de ti",
   address: "",
   phone: "",
   logo: undefined,
@@ -82,7 +82,7 @@ export const DEFAULT_BRANCHES: Branch[] = [
   },
   {
     id: "suc-1",
-    name: "Farmacia",
+    name: "Tienda",
     address: "Local único",
   },
 ];
@@ -657,7 +657,7 @@ function collapseToSingleStore(input: {
 
   const pharmacy = {
     ...main,
-    name: "Farmacia",
+    name: "Tienda",
     address: /sucursal/i.test(main.address ?? "")
       ? "Local único"
       : main.address || "Local único",
@@ -768,6 +768,22 @@ export function normalizeStoreData(raw: Partial<StoreData> & {
         raw.settings.cashFloat >= 0
           ? Math.round(raw.settings.cashFloat * 100) / 100
           : undefined,
+      satUsuario:
+        typeof raw.settings?.satUsuario === "string" &&
+        raw.settings.satUsuario.trim()
+          ? raw.settings.satUsuario.trim()
+          : undefined,
+      satClave:
+        typeof raw.settings?.satClave === "string" && raw.settings.satClave.trim()
+          ? raw.settings.satClave.trim()
+          : undefined,
+      satConfigured:
+        Boolean(
+          typeof raw.settings?.satUsuario === "string" &&
+            raw.settings.satUsuario.trim() &&
+            typeof raw.settings?.satClave === "string" &&
+            raw.settings.satClave.trim(),
+        ) || raw.settings?.satConfigured === true,
     },
   };
 }

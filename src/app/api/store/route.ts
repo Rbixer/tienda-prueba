@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth-server";
 import { readStore, writeStore } from "@/lib/server-store";
 import { mergeUsersWithSecrets, publicStore } from "@/lib/store-public";
+import { mergeSatCredentials } from "@/lib/sat";
 import { normalizeStoreData } from "@/lib/store";
 import type { StoreData } from "@/lib/types";
 
@@ -68,6 +69,10 @@ export async function PUT(request: Request) {
     const next = normalizeStoreData({
       ...data,
       users: mergedUsers.users,
+      settings: {
+        ...data.settings,
+        ...mergeSatCredentials(current.settings, data.settings),
+      },
       version: currentVersion + 1,
     });
 

@@ -149,7 +149,7 @@ export function AppShell({
     discardOfflineSale,
     data,
   } = useAuth();
-  const companyName = data.settings?.companyName?.trim() || "FARMACIA";
+  const companyName = data.settings?.companyName?.trim() || "TIENDA";
   const canConfig = hasPermission(session, "configuracion");
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [showConflictDetail, setShowConflictDetail] = useState(true);
@@ -196,7 +196,7 @@ export function AppShell({
       <SideNav collapsed={navCollapsed} onToggleCollapsed={toggleNavCollapsed} />
       <div
         className={`flex h-full min-h-0 w-full min-w-0 flex-1 flex-col transition-[padding] duration-200 ${
-          navCollapsed ? "md:pl-[4.6rem]" : "md:pl-60"
+          navCollapsed ? "md:pl-[calc(4.6rem+1.5rem)]" : "md:pl-[calc(15rem+1.5rem)]"
         }`}
       >
         <header className="app-shell__header z-30 shrink-0 border-b border-[var(--line)] bg-white/95 backdrop-blur-md">

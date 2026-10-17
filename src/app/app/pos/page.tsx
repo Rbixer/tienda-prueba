@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Minus,
   Plus,
@@ -13,6 +13,7 @@ import { AppShell } from "@/components/AppShell";
 import { BarcodeCapture } from "@/components/BarcodeCapture";
 import { ProductThumb } from "@/components/ProductThumb";
 import {
+  Field,
   Panel,
   buttonPrimary,
   buttonSecondary,
@@ -21,7 +22,8 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { barcodesMatch, normalizeBarcode } from "@/lib/barcode";
 import { downloadInvoicePdf, printSaleTicket } from "@/lib/pdf";
-import { formatMoney, formatDate } from "@/lib/store";
+import { customerNameFromSales, isConsumerFinal, nitKey } from "@/lib/sat";
+import { formatMoney } from "@/lib/store";
 import {
   canSellBlister,
   canSellUnit,
@@ -43,7 +45,7 @@ import {
   productSearchText,
   productSubtitle,
 } from "@/lib/pharmacy";
-import type { PaymentMethod, PharmacyCategory, Product, SaleItem } from "@/lib/types";
+import type { PaymentMethod, PharmacyCategory, Product, Sale, SaleItem } from "@/lib/types";
 
 function lineKey(item: { productId: string; saleUnit?: string }) {
   return `${item.productId}:${item.saleUnit ?? "caja"}`;
@@ -63,10 +65,12 @@ function CartQtyInput({
   value,
   max,
   onCommit,
+  className = "",
 }: {
   value: number;
   max: number;
   onCommit: (qty: number) => void;
+  className?: string;
 }) {
   const [text, setText] = useState(String(value));
   const [focused, setFocused] = useState(false);
@@ -81,7 +85,7 @@ function CartQtyInput({
       inputMode="numeric"
       min={1}
       max={max}
-      className="h-11 w-14 rounded-lg border border-[var(--line)] bg-white text-center text-base font-semibold outline-none focus:border-[var(--brand)] sm:h-9 sm:text-sm"
+      className={`h-10 w-12 border-x border-y-0 border-[var(--line)] bg-transparent text-center text-base font-semibold outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${className}`}
       value={text}
       aria-label="Cantidad"
       onFocus={(e) => {
@@ -110,7 +114,6 @@ function CartQtyInput({
 export default function PosPage() {
   const {
     branchProducts,
-    branchSales,
     checkout,
     currentBranchName,
     session,
@@ -120,7 +123,8 @@ export default function PosPage() {
   const [barcodeInput, setBarcodeInput] = useState("");
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
-  const [printTicket, setPrintTicket] = useState(true);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [ticketSale, setTicketSale] = useState<Sale | null>(null);
   const [printing, setPrinting] = useState(false);
   const [category, setCategory] = useState<PharmacyCategory | "todos">("todos");
   const [payMethod, setPayMethod] = useState<PaymentMethod>("efectivo");
@@ -130,6 +134,10 @@ export default function PosPage() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerNit, setCustomerNit] = useState("");
+  const [nitStatus, setNitStatus] = useState<string | null>(null);
+  const [nitTest, setNitTest] = useState(false);
+  const [nitBusy, setNitBusy] = useState(false);
+  const nitRequest = useRef(0);
   const [issueInvoice, setIssueInvoice] = useState(false);
   const [rxNumber, setRxNumber] = useState("");
   const [rxDoctor, setRxDoctor] = useState("");
@@ -165,6 +173,78 @@ export default function PosPage() {
   const change =
     payMethod === "efectivo" && cashCovers ? receivedAmount - total : 0;
 
+  const lookupNit = useCallback(
+    async (raw: string, manual = false) => {
+      const nit = raw.trim();
+      if (!nit || isConsumerFinal(nit) || nitKey(nit).length < (manual ? 2 : 5)) {
+        setNitBusy(false);
+        setNitTest(false);
+        setNitStatus(
+          manual && isConsumerFinal(nit)
+            ? "Consumidor final no se consulta en la SAT."
+            : null,
+        );
+        return;
+      }
+      const requestId = ++nitRequest.current;
+      const remembered = customerNameFromSales(data.sales ?? [], nit);
+      if (remembered) setCustomerName(remembered);
+      setNitBusy(true);
+      setNitTest(false);
+      setNitStatus(remembered ? "Verificando en la SAT…" : "Buscando en la SAT…");
+      try {
+        const res = await fetch("/api/sat/nit", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nit }),
+        });
+        const body = (await res.json().catch(() => null)) as {
+          name?: string;
+          error?: string;
+          test?: boolean;
+        } | null;
+        if (requestId !== nitRequest.current) return;
+        if (res.ok && body?.name) {
+          setCustomerName(body.name);
+          setNitTest(Boolean(body.test));
+          setNitStatus(
+            body.test
+              ? "Modo de prueba. Este nombre no viene de la SAT."
+              : "Nombre registrado en la SAT.",
+          );
+          return;
+        }
+        setNitTest(false);
+        setNitStatus(body?.error || "No se encontró ese NIT en la SAT.");
+      } catch {
+        if (requestId !== nitRequest.current) return;
+        setNitTest(false);
+        setNitStatus(
+          remembered
+            ? "Sin conexión con la SAT. Quedó el nombre de una venta anterior."
+            : "No se pudo conectar con la consulta de NIT.",
+        );
+      } finally {
+        if (requestId === nitRequest.current) setNitBusy(false);
+      }
+    },
+    [data.sales],
+  );
+
+  useEffect(() => {
+    if (!checkoutOpen) return;
+    const nit = customerNit.trim();
+    if (!nit || isConsumerFinal(nit) || nitKey(nit).length < 5) {
+      setNitStatus(null);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void lookupNit(nit);
+    }, 700);
+    return () => window.clearTimeout(handle);
+  }, [checkoutOpen, customerNit, lookupNit]);
+
   const openProduct = useCallback((productId: string) => {
     const product = branchProducts.find((item) => item.id === productId);
     const boxes = product ? sellableBoxes(product) : 0;
@@ -192,7 +272,7 @@ export default function PosPage() {
         return false;
       }
       if (saleUnit === "blister" && !canSellBlister(product)) {
-        setError(`${product.name} no se vende por blíster.`);
+        setError(`${product.name} no se vende por paquete.`);
         setMessage(null);
         return false;
       }
@@ -331,6 +411,7 @@ export default function PosPage() {
   function clearCart() {
     setCart([]);
     setError(null);
+    setCheckoutOpen(false);
   }
 
   async function onCheckout() {
@@ -394,9 +475,12 @@ export default function PosPage() {
     setCart([]);
     setReceived("");
     setCartOpen(false);
+    setCheckoutOpen(false);
     setCustomerName("");
     setCustomerPhone("");
     setCustomerNit("");
+    setNitStatus(null);
+    setNitTest(false);
     setIssueInvoice(false);
     setRxNumber("");
     setRxDoctor("");
@@ -418,12 +502,16 @@ export default function PosPage() {
       }
     }
 
-    if (!printTicket) return;
+    setTicketSale(result.sale);
+  }
 
+  async function printPendingTicket() {
+    if (!ticketSale) return;
+    const sale = ticketSale;
     setPrinting(true);
     try {
       await printSaleTicket({
-        sale: result.sale,
+        sale,
         branchName: currentBranchName,
         companyName: data.settings?.companyName,
         slogan: data.settings?.slogan,
@@ -431,8 +519,10 @@ export default function PosPage() {
         phone: data.settings?.phone,
         alsoDownload: true,
       });
+      setTicketSale(null);
     } catch {
       setError("La venta se registró, pero no se pudo imprimir el ticket.");
+      setTicketSale(null);
     } finally {
       setPrinting(false);
     }
@@ -446,14 +536,28 @@ export default function PosPage() {
           {cart.map((item) => (
             <div
               key={lineKey(item)}
-              className="flex items-center justify-between gap-3 rounded-md border border-[var(--line)] bg-[var(--bg-soft)] px-3 py-2"
+              className="rounded-xl border border-[var(--line)] bg-[var(--bg-soft)] p-2"
             >
-              <div className="flex min-w-0 items-center gap-2">
+              <div className="flex items-start gap-2">
                 <ProductThumb src={item.image} alt={item.name} size="sm" />
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{item.name}</p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="truncate text-sm font-semibold">{item.name}</p>
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
+                      onClick={() =>
+                        setCart((prev) =>
+                          prev.filter((i) => lineKey(i) !== lineKey(item)),
+                        )
+                      }
+                      aria-label="Quitar"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                   <p className="text-xs text-[var(--muted)]">
-                    {formatMoney(item.price)} · {packName(item.saleUnit)}
+                    {packName(item.saleUnit)} · {formatMoney(item.price)}
                     {branchProducts.find((p) => p.id === item.productId)
                       ?.requiresPrescription
                       ? " · Receta"
@@ -461,211 +565,67 @@ export default function PosPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-white"
-                  onClick={() => changeQty(lineKey(item), -1)}
-                  aria-label="Restar"
-                >
-                  <Minus size={16} />
-                </button>
-                <CartQtyInput
-                  value={item.quantity}
-                  max={999}
-                  onCommit={(qty) => setQty(lineKey(item), qty)}
-                />
-                <button
-                  type="button"
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-white"
-                  onClick={() => changeQty(lineKey(item), 1)}
-                  aria-label="Sumar"
-                >
-                  <Plus size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="ml-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
-                  onClick={() =>
-                    setCart((prev) =>
-                      prev.filter((i) => lineKey(i) !== lineKey(item)),
-                    )
-                  }
-                  aria-label="Quitar"
-                >
-                  <Trash2 size={16} />
-                </button>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="flex items-center rounded-lg border border-[var(--line)] bg-white">
+                  <button
+                    type="button"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-l-lg hover:bg-[var(--bg-soft)]"
+                    onClick={() => changeQty(lineKey(item), -1)}
+                    aria-label="Restar"
+                  >
+                    <Minus size={16} />
+                  </button>
+                  <CartQtyInput
+                    value={item.quantity}
+                    max={999}
+                    onCommit={(qty) => setQty(lineKey(item), qty)}
+                  />
+                  <button
+                    type="button"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-r-lg hover:bg-[var(--bg-soft)]"
+                    onClick={() => changeQty(lineKey(item), 1)}
+                    aria-label="Sumar"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+                <p className="text-sm font-bold tabular-nums">
+                  {formatMoney(item.price * item.quantity)}
+                </p>
               </div>
             </div>
           ))}
           {cart.length === 0 ? (
-            <div className="flex min-h-24 flex-1 items-center justify-center rounded-md border border-dashed border-[var(--line)] bg-[var(--bg-soft)]/60 px-3">
+            <div className="flex min-h-[8.5rem] items-center justify-center rounded-xl border border-dashed border-[var(--line)] bg-[var(--bg-soft)]/60 px-3">
               <p className="text-center text-sm text-[var(--muted)]">
                 Escanea un código o toca un producto.
               </p>
             </div>
           ) : null}
         </div>
-        <div className="mt-3 shrink-0 border-t border-[var(--line)] pt-3">
+        <div className="mt-3 shrink-0 border-t border-[var(--line)] pt-3 lg:pr-16">
           <div className="flex items-center justify-between">
             <span className="text-sm text-[var(--muted)]">Total</span>
             <span className="font-[family-name:var(--font-display)] text-2xl font-semibold">
               {formatMoney(total)}
             </span>
           </div>
-          {showMessages && error ? (
+          {showMessages && error && !checkoutOpen ? (
             <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
             </p>
           ) : null}
-          {showMessages && message ? (
-            <p className="mt-2 rounded-md bg-[var(--brand-soft)] px-3 py-2 text-sm text-[var(--brand)]">
-              {message}
-            </p>
-          ) : null}
-          <div className="mt-2 grid gap-2">
-            <input
-              className={inputClass}
-              placeholder="Nombre del cliente"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                className={inputClass}
-                placeholder="Teléfono"
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-              />
-              <input
-                className={inputClass}
-                placeholder="NIT"
-                value={customerNit}
-                onChange={(e) => setCustomerNit(e.target.value)}
-              />
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-[var(--brand)]"
-                checked={issueInvoice}
-                onChange={(e) => setIssueInvoice(e.target.checked)}
-              />
-              Emitir factura
-            </label>
-          </div>
-          {cart.some(
-            (item) =>
-              branchProducts.find((product) => product.id === item.productId)
-                ?.controlled,
-          ) ? (
-            <div className="mt-2 grid gap-2 rounded-xl border border-rose-200 bg-rose-50 p-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-800">
-                Receta de controlado
-              </p>
-              <input
-                className={inputClass}
-                placeholder="Número de receta"
-                value={rxNumber}
-                onChange={(e) => setRxNumber(e.target.value)}
-              />
-              <input
-                className={inputClass}
-                placeholder="Médico"
-                value={rxDoctor}
-                onChange={(e) => setRxDoctor(e.target.value)}
-              />
-              <input
-                className={inputClass}
-                placeholder="Paciente"
-                value={rxPatient}
-                onChange={(e) => setRxPatient(e.target.value)}
-              />
-              <input
-                type="date"
-                className={inputClass}
-                value={rxDate}
-                onChange={(e) => setRxDate(e.target.value)}
-              />
-            </div>
-          ) : null}
-          <div className="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-[var(--bg-soft)] p-1">
-            {(
-              [
-                ["efectivo", "Efectivo"],
-                ["tarjeta", "Tarjeta"],
-                ["transferencia", "Transf."],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                className={`min-h-10 rounded-lg text-xs font-semibold ${
-                  payMethod === id
-                    ? "bg-white text-[var(--brand)] shadow-sm"
-                    : "text-[var(--muted)]"
-                }`}
-                onClick={() => setPayMethod(id)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {payMethod === "efectivo" ? (
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <label className="block">
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
-                  Recibido
-                </span>
-                <input
-                  className={inputClass}
-                  inputMode="decimal"
-                  value={received}
-                  placeholder="0.00"
-                  onChange={(e) => setReceived(e.target.value)}
-                />
-              </label>
-              <div className="rounded-xl border border-[var(--line)] bg-white px-3 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
-                  Vuelto
-                </p>
-                <p className="mt-1 text-lg font-semibold text-[var(--brand)]">
-                  {cashCovers ? formatMoney(Math.max(change, 0)) : "—"}
-                </p>
-              </div>
-            </div>
-          ) : null}
-          {payMethod === "efectivo" ? (
-            <button
-              type="button"
-              className={`${buttonSecondary} mt-2 min-h-10 w-full`}
-              onClick={() => setReceived(total.toFixed(2))}
-            >
-              Pago exacto
-            </button>
-          ) : null}
-          <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-[var(--brand)]"
-              checked={printTicket}
-              onChange={(e) => setPrintTicket(e.target.checked)}
-            />
-            <Printer size={15} className="shrink-0 text-[var(--muted)]" />
-            <span>Imprimir ticket al cobrar</span>
-          </label>
           <div className="mt-3 flex gap-2">
             <button
               type="button"
               className={`${buttonPrimary} min-h-11 flex-1`}
-              onClick={() => void onCheckout()}
-              disabled={cart.length === 0 || printing || !cashCovers}
+              onClick={() => {
+                setError(null);
+                setCheckoutOpen(true);
+              }}
+              disabled={cart.length === 0 || printing}
             >
-              {printing
-                ? "Imprimiendo…"
-                : printTicket
-                  ? "Cobrar e imprimir"
-                  : "Cobrar"}
+              Cobrar
             </button>
             <button
               type="button"
@@ -680,6 +640,10 @@ export default function PosPage() {
       </>
     );
   }
+
+  const needsRx = cart.some(
+    (item) => branchProducts.find((product) => product.id === item.productId)?.controlled,
+  );
 
   const picked = branchProducts.find((product) => product.id === pickedId) ?? null;
   const pickedCanUnit = Boolean(picked && canSellUnit(picked));
@@ -726,7 +690,7 @@ export default function PosPage() {
               <div className="mb-2 flex shrink-0 gap-2">
                 <input
                   className={`${inputClass} flex-1`}
-                  placeholder="Nombre, principio activo o lote…"
+                  placeholder="Nombre, marca o código…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
@@ -867,7 +831,7 @@ export default function PosPage() {
                       </span>
                       <span className="text-center">
                         <span className="block text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
-                          Blíster
+                          Paquete
                         </span>
                         <span className="block text-sm font-bold tabular-nums text-[var(--ink)]">
                           {sellsBlister ? formatMoney(product.blisterPrice!) : "—"}
@@ -897,8 +861,8 @@ export default function PosPage() {
             </Panel>
 
             {/* Desktop: columna sticky */}
-            <aside className="hidden min-h-0 w-full flex-col gap-3 self-start lg:sticky lg:top-3 lg:z-20 lg:flex lg:max-h-[calc(100dvh-5.5rem)]">
-              <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden !p-3 sm:!p-4">
+            <aside className="hidden h-[calc(100dvh-8rem)] min-h-0 w-full lg:sticky lg:top-3 lg:z-20 lg:block">
+              <Panel className="flex h-full min-h-0 flex-col overflow-hidden !p-3 sm:!p-4">
                 <div className="mb-2.5 flex shrink-0 items-center gap-2">
                   <ShoppingBag size={18} className="text-[var(--brand)]" />
                   <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
@@ -906,34 +870,6 @@ export default function PosPage() {
                   </h2>
                 </div>
                 {renderCartBody({ showMessages: true })}
-              </Panel>
-              <Panel className="shrink-0 !p-3 sm:!p-4">
-                <h3 className="font-semibold">Últimas ventas</h3>
-                <div className="mt-2 max-h-36 space-y-2 overflow-y-auto lg:max-h-40">
-                  {branchSales.slice(0, 6).map((sale) => (
-                    <div
-                      key={sale.id}
-                      className="flex items-center justify-between rounded-lg bg-[var(--bg-soft)] px-3 py-2 text-sm"
-                    >
-                      <div className="min-w-0">
-                        <p className="font-medium">
-                          {formatMoney(sale.total)}
-                        </p>
-                        <p className="truncate text-xs text-[var(--muted)]">
-                          {sale.userName} · {formatDate(sale.createdAt)}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-xs text-[var(--muted)]">
-                        {sale.items.length} ítems
-                      </span>
-                    </div>
-                  ))}
-                  {branchSales.length === 0 ? (
-                    <p className="text-sm text-[var(--muted)]">
-                      Aún no hay ventas.
-                    </p>
-                  ) : null}
-                </div>
               </Panel>
             </aside>
           </div>
@@ -991,6 +927,318 @@ export default function PosPage() {
             </div>
           ) : null}
 
+          {checkoutOpen ? (
+            <div className="fixed inset-0 z-[90] flex items-end justify-center bg-[var(--navy)]/55 p-2 sm:items-center sm:p-8">
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="checkout-title"
+                className="flex max-h-[94dvh] min-h-[min(40rem,94dvh)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0_28px_80px_rgba(11,37,32,0.35)]"
+              >
+                <header className="flex items-center gap-4 bg-[var(--navy)] px-5 py-4 text-white sm:px-7 sm:py-5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/60">
+                      Punto de venta
+                    </p>
+                    <h2
+                      id="checkout-title"
+                      className="font-[family-name:var(--font-display)] text-2xl font-semibold leading-tight"
+                    >
+                      Cobro
+                    </h2>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/60">
+                      Total a cobrar
+                    </p>
+                    <p className="font-[family-name:var(--font-display)] text-3xl font-semibold tabular-nums">
+                      {formatMoney(total)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-lg p-2 text-white/80 hover:bg-white/10"
+                    onClick={() => setCheckoutOpen(false)}
+                    aria-label="Cerrar"
+                  >
+                    <X size={20} />
+                  </button>
+                </header>
+
+                <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
+                  <section className="border-b border-[var(--line)] px-5 py-5 sm:px-7 lg:border-b-0 lg:border-r">
+                    <div className="mb-3 flex items-baseline justify-between">
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+                        Detalle
+                      </h3>
+                      <span className="text-sm text-[var(--muted)]">
+                        {cartUnits} {cartUnits === 1 ? "línea" : "líneas"}
+                      </span>
+                    </div>
+                    <div className="overflow-hidden rounded-xl border border-[var(--line)]">
+                      <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_6.5rem] gap-3 bg-[var(--bg-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+                        <span>Cant.</span>
+                        <span>Producto</span>
+                        <span className="text-right">Importe</span>
+                      </div>
+                      <ul className="max-h-80 divide-y divide-[var(--line)] overflow-y-auto">
+                        {cart.map((item) => (
+                          <li
+                            key={lineKey(item)}
+                            className="grid grid-cols-[4.5rem_minmax(0,1fr)_6.5rem] items-center gap-3 px-4 py-3"
+                          >
+                            <span className="text-sm font-semibold tabular-nums">
+                              {item.quantity} {packName(item.saleUnit)}
+                            </span>
+                            <span className="min-w-0 truncate text-sm">{item.name}</span>
+                            <span className="text-right text-sm font-semibold tabular-nums">
+                              {formatMoney(item.price * item.quantity)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    {error ? (
+                      <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                        {error}
+                      </p>
+                    ) : null}
+                  </section>
+
+                  <section className="space-y-5 bg-[var(--bg)] px-5 py-5 sm:px-6">
+                    <div>
+                      <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+                        Cliente
+                      </h3>
+                      <div className="grid gap-3">
+                        <Field label="Nombre">
+                          <input
+                            className={inputClass}
+                            placeholder="Consumidor final"
+                            value={customerName}
+                            onChange={(e) => setCustomerName(e.target.value)}
+                          />
+                        </Field>
+                        <Field label="NIT">
+                          <div className="flex gap-2">
+                            <input
+                              className={`${inputClass} min-w-0 flex-1`}
+                              placeholder="CF"
+                              value={customerNit}
+                              onChange={(e) => setCustomerNit(e.target.value)}
+                              onBlur={() => void lookupNit(customerNit)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void lookupNit(customerNit, true);
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className={`${buttonSecondary} shrink-0 px-3`}
+                              disabled={nitBusy}
+                              onClick={() => void lookupNit(customerNit, true)}
+                            >
+                              {nitBusy ? "…" : "SAT"}
+                            </button>
+                          </div>
+                        </Field>
+                        {nitStatus ? (
+                          <p
+                            className={`text-xs ${
+                              nitTest ? "font-medium text-amber-800" : "text-[var(--muted)]"
+                            }`}
+                          >
+                            {nitStatus}
+                          </p>
+                        ) : null}
+                        <Field label="Teléfono">
+                          <input
+                            className={inputClass}
+                            value={customerPhone}
+                            onChange={(e) => setCustomerPhone(e.target.value)}
+                          />
+                        </Field>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-[var(--brand)]"
+                            checked={issueInvoice}
+                            onChange={(e) => setIssueInvoice(e.target.checked)}
+                          />
+                          Emitir factura
+                        </label>
+                      </div>
+                    </div>
+
+                    {needsRx ? (
+                      <div className="grid gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3">
+                        <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-rose-800">
+                          Receta de controlado
+                        </h3>
+                        <Field label="Número">
+                          <input
+                            className={inputClass}
+                            value={rxNumber}
+                            onChange={(e) => setRxNumber(e.target.value)}
+                          />
+                        </Field>
+                        <Field label="Médico">
+                          <input
+                            className={inputClass}
+                            value={rxDoctor}
+                            onChange={(e) => setRxDoctor(e.target.value)}
+                          />
+                        </Field>
+                        <div className="grid grid-cols-2 gap-3">
+                          <Field label="Paciente">
+                            <input
+                              className={inputClass}
+                              value={rxPatient}
+                              onChange={(e) => setRxPatient(e.target.value)}
+                            />
+                          </Field>
+                          <Field label="Fecha">
+                            <input
+                              type="date"
+                              className={inputClass}
+                              value={rxDate}
+                              onChange={(e) => setRxDate(e.target.value)}
+                            />
+                          </Field>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div>
+                      <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+                        Pago
+                      </h3>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(
+                          [
+                            ["efectivo", "Efectivo"],
+                            ["tarjeta", "Tarjeta"],
+                            ["transferencia", "Transferencia"],
+                          ] as const
+                        ).map(([id, label]) => (
+                          <button
+                            key={id}
+                            type="button"
+                            className={`min-h-11 rounded-xl border text-sm font-semibold ${
+                              payMethod === id
+                                ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
+                                : "border-[var(--line)] bg-white text-[var(--muted)]"
+                            }`}
+                            onClick={() => setPayMethod(id)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {payMethod === "efectivo" ? (
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          <Field label="Recibido">
+                            <input
+                              className={inputClass}
+                              inputMode="decimal"
+                              value={received}
+                              placeholder="0.00"
+                              onChange={(e) => setReceived(e.target.value)}
+                            />
+                          </Field>
+                          <div className="rounded-xl border border-[var(--line)] bg-white px-3 py-2">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+                              Vuelto
+                            </p>
+                            <p className="mt-1 font-[family-name:var(--font-display)] text-2xl font-semibold tabular-nums text-[var(--brand)]">
+                              {cashCovers ? formatMoney(Math.max(change, 0)) : "—"}
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
+                      {payMethod === "efectivo" ? (
+                        <button
+                          type="button"
+                          className={`${buttonSecondary} mt-3 min-h-10 w-full`}
+                          onClick={() => setReceived(total.toFixed(2))}
+                        >
+                          Pago exacto
+                        </button>
+                      ) : null}
+                    </div>
+                  </section>
+                </div>
+
+                <footer className="flex flex-col-reverse gap-3 border-t border-[var(--line)] bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-end sm:px-7">
+                  <button
+                    type="button"
+                    className={`${buttonSecondary} min-h-12 px-6`}
+                    onClick={() => setCheckoutOpen(false)}
+                  >
+                    Volver
+                  </button>
+                  <button
+                    type="button"
+                    className={`${buttonPrimary} min-h-12 px-8`}
+                    onClick={() => void onCheckout()}
+                    disabled={cart.length === 0 || printing || !cashCovers}
+                  >
+                    {printing ? "Imprimiendo…" : `Cobrar ${formatMoney(total)}`}
+                  </button>
+                </footer>
+              </div>
+            </div>
+          ) : null}
+
+          {ticketSale ? (
+            <div className="fixed inset-0 z-[95] flex items-end justify-center bg-[var(--navy)]/50 p-3 sm:items-center">
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="ticket-ask-title"
+                className="w-full max-w-md rounded-2xl bg-white p-5 shadow-[0_24px_60px_rgba(11,61,50,0.28)] sm:p-6"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--brand-soft)] text-[var(--brand)]">
+                    <Printer size={20} />
+                  </span>
+                  <div>
+                    <h2
+                      id="ticket-ask-title"
+                      className="font-[family-name:var(--font-display)] text-lg font-semibold"
+                    >
+                      ¿Imprimir el ticket?
+                    </h2>
+                    <p className="mt-1 text-sm text-[var(--muted)]">
+                      La venta de {formatMoney(ticketSale.total)} ya quedó registrada.
+                      El ticket solo se imprime si lo confirmas.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    className={`${buttonSecondary} min-h-11 px-5`}
+                    onClick={() => setTicketSale(null)}
+                    disabled={printing}
+                  >
+                    No imprimir
+                  </button>
+                  <button
+                    type="button"
+                    className={`${buttonPrimary} min-h-11 px-5`}
+                    onClick={() => void printPendingTicket()}
+                    disabled={printing}
+                  >
+                    {printing ? "Imprimiendo…" : "Imprimir ticket"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {picked ? (
             <div className="fixed inset-0 z-[85] flex items-end justify-center bg-[var(--navy)]/45 p-3 sm:items-center">
               <div
@@ -1036,10 +1284,10 @@ export default function PosPage() {
 
                 <dl className="mt-4 grid grid-cols-2 gap-2">
                   {[
-                    ["Principio activo", picked.genericName],
+                    ["Marca", picked.genericName],
                     ["Presentación", picked.presentation],
-                    ["Concentración", picked.concentration],
-                    ["Laboratorio", picked.laboratory],
+                    ["Contenido", picked.concentration],
+                    ["Proveedor", picked.laboratory],
                     ["Lote", picked.lot],
                     [
                       "Vencimiento",
@@ -1053,7 +1301,7 @@ export default function PosPage() {
                           ? `${picked.unitsPerBox} unidades por caja`
                           : "",
                         picked.unitsPerBlister
-                          ? `${picked.unitsPerBlister} por blíster`
+                          ? `${picked.unitsPerBlister} por paquete`
                           : "",
                       ]
                         .filter(Boolean)
@@ -1118,7 +1366,7 @@ export default function PosPage() {
                     }`}
                   >
                     <span className="block text-xs font-semibold text-[var(--muted)]">
-                      Blíster
+                      Paquete
                     </span>
                     <span className="mt-1 block text-base font-bold tabular-nums">
                       {pickedCanBlister
@@ -1195,7 +1443,7 @@ export default function PosPage() {
                         pickUnit === "unidad"
                           ? "Unidad"
                           : pickUnit === "blister"
-                            ? "Blíster"
+                            ? "Paquete"
                             : "Caja";
                       setMessage(`${label}: ${picked.name} × ${pickQty}`);
                       setPickedId(null);

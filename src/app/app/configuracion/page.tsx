@@ -7,6 +7,7 @@ import {
   KeyRound,
   MapPin,
   Palette,
+  Search,
   Settings,
   Trash2,
   Wallet,
@@ -156,7 +157,7 @@ function ChangePasswordPanel() {
 }
 
 export default function ConfiguracionPage() {
-  const { data, updateSettings } = useAuth();
+  const { data, updateSettings, saveSatCredentials } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [companyName, setCompanyName] = useState("");
   const [slogan, setSlogan] = useState("");
@@ -168,6 +169,11 @@ export default function ConfiguracionPage() {
   const [pdfStyle, setPdfStyle] = useState<PdfStyleSettings>(DEFAULT_PDF_STYLE);
   const [cashMode, setCashMode] = useState<"fija" | "libre">("libre");
   const [cashAmount, setCashAmount] = useState("");
+  const [satUsuario, setSatUsuario] = useState("");
+  const [satClave, setSatClave] = useState("");
+  const [satSaving, setSatSaving] = useState(false);
+  const [satError, setSatError] = useState<string | null>(null);
+  const [satOk, setSatOk] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -189,6 +195,7 @@ export default function ConfiguracionPage() {
         ? String(data.settings.cashFloat)
         : "",
     );
+    setSatUsuario(data.settings?.satUsuario ?? "");
     setHydrated(true);
   }, [data.settings, hydrated]);
 
@@ -246,6 +253,27 @@ export default function ConfiguracionPage() {
     setOk("Configuración guardada. Se aplica en login, menú y PDFs.");
   }
 
+  async function onSaveSat() {
+    setSatSaving(true);
+    setSatError(null);
+    setSatOk(null);
+    const err = await saveSatCredentials({
+      usuario: satUsuario,
+      clave: satClave,
+    });
+    setSatSaving(false);
+    if (err) {
+      setSatError(err);
+      return;
+    }
+    setSatClave("");
+    setSatOk(
+      satUsuario.trim()
+        ? "Consulta de NIT guardada. En el cobro el nombre se llena solo."
+        : "Consulta de NIT desactivada.",
+    );
+  }
+
   const previewContact = [address.trim(), phone.trim() ? `Tel. ${phone.trim()}` : ""]
     .filter(Boolean)
     .join("  ·  ");
@@ -279,7 +307,7 @@ export default function ConfiguracionPage() {
                     className={inputClass}
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
-                    placeholder="Nombre de la farmacia"
+                    placeholder="Nombre de la tienda"
                   />
                 </Field>
 
@@ -288,7 +316,7 @@ export default function ConfiguracionPage() {
                     className={inputClass}
                     value={slogan}
                     onChange={(e) => setSlogan(e.target.value)}
-                    placeholder="Tu salud, en buenas manos"
+                    placeholder="Lo del día, cerca de ti"
                     maxLength={80}
                   />
                 </Field>
@@ -360,7 +388,7 @@ export default function ConfiguracionPage() {
                   onClick={() => setCashMode("fija")}
                   className={`min-h-10 rounded-lg px-3 py-2 text-sm font-semibold transition ${
                     cashMode === "fija"
-                      ? "bg-[var(--navy)] text-white shadow-[0_2px_8px_rgba(11,37,69,0.25)]"
+                      ? "bg-[var(--navy)] text-white shadow-[0_2px_8px_rgba(59,36,24,0.25)]"
                       : "text-[var(--muted)] hover:text-[var(--navy)]"
                   }`}
                 >
@@ -371,7 +399,7 @@ export default function ConfiguracionPage() {
                   onClick={() => setCashMode("libre")}
                   className={`min-h-10 rounded-lg px-3 py-2 text-sm font-semibold transition ${
                     cashMode === "libre"
-                      ? "bg-[var(--navy)] text-white shadow-[0_2px_8px_rgba(11,37,69,0.25)]"
+                      ? "bg-[var(--navy)] text-white shadow-[0_2px_8px_rgba(59,36,24,0.25)]"
                       : "text-[var(--muted)] hover:text-[var(--navy)]"
                   }`}
                 >
@@ -459,6 +487,70 @@ export default function ConfiguracionPage() {
             </Panel>
 
             <Panel>
+              <div className="grid gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[var(--brand-soft)] text-[var(--brand)]">
+                    <Search size={18} />
+                  </span>
+                  <div>
+                    <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+                      Consulta de NIT
+                    </h2>
+                    <p className="text-xs text-[var(--muted)]">
+                      {data.settings?.satConfigured
+                        ? "Activa. El cobro busca el nombre en la SAT."
+                        : "Modo de prueba: el cobro llena «Contribuyente de prueba» hasta que guardes el usuario y la clave."}
+                    </p>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Usuario Infile">
+                    <input
+                      className={inputClass}
+                      value={satUsuario}
+                      onChange={(e) => setSatUsuario(e.target.value)}
+                      placeholder="Código de emisor"
+                      autoComplete="off"
+                      maxLength={80}
+                    />
+                  </Field>
+                  <Field label="Clave de consulta">
+                    <PasswordField
+                      value={satClave}
+                      onChange={setSatClave}
+                      placeholder={
+                        data.settings?.satConfigured
+                          ? "Dejar en blanco para no cambiar"
+                          : "Clave del servicio de NIT"
+                      }
+                    />
+                  </Field>
+                </div>
+                <p className="text-xs text-[var(--muted)]">
+                  Usa el usuario y la clave del servicio de consulta de NIT de Infile. Ese servicio devuelve el nombre registrado en la SAT. No es la contraseña de Agencia Virtual y no certifica la factura. Deja el usuario vacío para desactivar la búsqueda.
+                </p>
+                {satError ? (
+                  <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {satError}
+                  </p>
+                ) : null}
+                {satOk ? (
+                  <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    {satOk}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  className={`${buttonPrimary} w-full sm:w-auto`}
+                  disabled={satSaving}
+                  onClick={() => void onSaveSat()}
+                >
+                  {satSaving ? "Guardando..." : "Guardar consulta de NIT"}
+                </button>
+              </div>
+            </Panel>
+
+            <Panel>
               <div className="mb-4 flex items-center gap-2">
                 <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[var(--amber-soft)] text-[var(--amber)]">
                   <Palette size={18} />
@@ -478,7 +570,7 @@ export default function ConfiguracionPage() {
                   <div className="flex items-center gap-3">
                     <input
                       type="color"
-                      value={pdfStyle.accentColor ?? "#0b3d32"}
+                      value={pdfStyle.accentColor ?? "#e06a1f"}
                       onChange={(e) =>
                         setPdfStyle((p) => ({
                           ...p,
@@ -489,7 +581,7 @@ export default function ConfiguracionPage() {
                     />
                     <input
                       className={`${inputClass} max-w-[9rem] font-mono uppercase`}
-                      value={pdfStyle.accentColor ?? "#0b3d32"}
+                      value={pdfStyle.accentColor ?? "#e06a1f"}
                       onChange={(e) =>
                         setPdfStyle((p) => ({
                           ...p,
@@ -524,7 +616,7 @@ export default function ConfiguracionPage() {
               <div className="mt-5 overflow-hidden rounded-xl border border-[var(--line)] bg-white">
                 <div
                   className="h-1.5 w-full"
-                  style={{ background: pdfStyle.accentColor ?? "#0b3d32" }}
+                  style={{ background: pdfStyle.accentColor ?? "#e06a1f" }}
                 />
                 <div className="flex gap-3 p-4">
                   {logo ? (
@@ -543,7 +635,7 @@ export default function ConfiguracionPage() {
                     <p
                       className="truncate text-lg leading-tight"
                       style={{
-                        color: pdfStyle.companyName?.color ?? "#0b3d32",
+                        color: pdfStyle.companyName?.color ?? "#3b2418",
                         fontWeight: pdfStyle.companyName?.bold ? 700 : 500,
                         fontStyle: pdfStyle.companyName?.italic
                           ? "italic"
@@ -651,14 +743,14 @@ function StyleRow({
         </button>
         <input
           type="color"
-          value={style?.color ?? "#0b3d32"}
+          value={style?.color ?? "#3b2418"}
           onChange={(e) => onChange({ color: e.target.value })}
           className="h-9 w-11 cursor-pointer rounded-lg border border-[var(--line)] bg-white p-1"
           title="Color"
         />
         <input
           className={`${inputClass} !py-2 max-w-[7.5rem] font-mono text-xs uppercase`}
-          value={style?.color ?? "#0b3d32"}
+          value={style?.color ?? "#3b2418"}
           onChange={(e) => onChange({ color: e.target.value })}
           maxLength={7}
         />

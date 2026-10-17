@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { SESSION_KEY, createInitialData, uid, getCostPrice, isCashDayClosed, isCashFloatLocked, normalizePdfStyle } from "@/lib/store";
+import { SESSION_KEY, createInitialData, uid, getCostPrice, isCashDayClosed, isCashFloatLocked, normalizePdfStyle, normalizeStoreData } from "@/lib/store";
 import {
   applyCheckout,
   returnSaleLine,
@@ -101,7 +101,7 @@ type AuthContextValue = {
       costPrice: number;
       quantity: number;
       barcode?: string;
-      image?: string;
+      image?: string | null;
       branchId?: string;
       minStock?: number;
       unitsPerBox?: number;
@@ -123,7 +123,7 @@ type AuthContextValue = {
       costPrice: number;
       quantity: number;
       barcode?: string;
-      image?: string;
+      image?: string | null;
       minStock?: number;
         unitsPerBox?: number;
         unitPrice?: number;
@@ -193,6 +193,7 @@ type AuthContextValue = {
     cashFloatMode?: "fija" | "libre";
     cashFloat?: number;
   }) => string | null;
+  saveSatCredentials: (input: { usuario: string; clave?: string }) => Promise<string | null>;
   importProducts: (
     rows: ({
       name: string;
@@ -765,7 +766,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       costPrice: number;
       quantity: number;
       barcode?: string;
-      image?: string;
+      image?: string | null;
       branchId?: string;
       minStock?: number;
       unitsPerBox?: number;
@@ -781,7 +782,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const name = input.name.trim();
       const barcode = input.barcode?.trim() || undefined;
       if (!name) return "El nombre es obligatorio.";
-      if (!input.image) return "La fotografía del producto es obligatoria.";
       if (!barcode) return "El código de barras es obligatorio.";
       const clinical = validatePharmacy(input, { strict: true });
       if (clinical) return clinical;
@@ -809,7 +809,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         costPrice: Number(input.costPrice),
         quantity: Math.floor(input.quantity),
         barcode,
-        image: input.image,
+        image: input.image || undefined,
         ...details,
         minStock:
           input.minStock !== undefined ? Math.max(0, Math.floor(input.minStock)) : 5,
@@ -846,7 +846,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         costPrice: number;
         quantity: number;
         barcode?: string;
-        image?: string;
+        image?: string | null;
         minStock?: number;
         unitsPerBox?: number;
         unitPrice?: number;
@@ -867,8 +867,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (input.quantity < 0) return "La cantidad no puede ser negativa.";
       const current = data.products.find((p) => p.id === id);
       if (!current) return "Producto no encontrado.";
-      const image = input.image ?? current.image;
-      if (!image) return "La fotografía del producto es obligatoria.";
+      const image =
+        input.image === null
+          ? undefined
+          : input.image !== undefined
+            ? input.image || undefined
+            : current.image;
       if (!barcode) return "El código de barras es obligatorio.";
       const clinical = validatePharmacy(input, { strict: true });
       if (clinical) return clinical;
@@ -1486,7 +1490,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const toBranch = data.branches.find((b) => b.id === input.toBranchId);
       if (!fromOk || !toBranch) return "Origen o destino no válido.";
       if (toBranch.isWarehouse) {
-        return "La bodega solo envía traslados a la farmacia.";
+        return "La bodega solo envía traslados a la tienda.";
       }
 
       let products = [...data.products];
@@ -1689,6 +1693,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return null;
     },
     [data, persist, session],
+  );
+
+  const saveSatCredentials = useCallback(
+    async (input: { usuario: string; clave?: string }) => {
+      if (!session || !hasPermission(session, "configuracion")) {
+        return "No tienes permiso para cambiar la configuración.";
+      }
+      try {
+        const res = await fetch("/api/sat/credentials", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            usuario: input.usuario,
+            clave: input.clave ?? "",
+          }),
+        });
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+          store?: Partial<import("@/lib/types").StoreData>;
+        } | null;
+        if (!res.ok) return body?.error || "No se pudo guardar la consulta de NIT.";
+        if (body?.store) {
+          const saved = normalizeStoreData(body.store);
+          setData(saved);
+          dataRef.current = saved;
+          writeLocalStore(saved);
+        }
+        return null;
+      } catch {
+        return "No se pudo guardar la consulta de NIT.";
+      }
+    },
+    [session],
   );
 
   const importProducts = useCallback(
@@ -2036,7 +2074,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const currentBranchName = useMemo(() => {
     if (!session) return "";
     return (
-      data.branches.find((b) => b.id === session.branchId)?.name ?? "Farmacia"
+      data.branches.find((b) => b.id === session.branchId)?.name ?? "Tienda"
     );
   }, [data.branches, session]);
   const storeBranches = useMemo(
@@ -2089,6 +2127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelPurchaseOrder,
       transferStock,
       updateSettings,
+      saveSatCredentials,
       importProducts,
       createSupplier,
       updateSupplier,
@@ -2134,6 +2173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelPurchaseOrder,
       transferStock,
       updateSettings,
+      saveSatCredentials,
       importProducts,
       createSupplier,
       updateSupplier,

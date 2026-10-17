@@ -128,7 +128,7 @@ async function drawDocumentHeader(
 
   // Slogan
   const slogan =
-    opts.slogan?.trim() || "Tu salud, en buenas manos";
+    opts.slogan?.trim() || "Lo del día, cerca de ti";
   applyTextStyle(doc, style.slogan, 9);
   doc.text(slogan, textX, textY);
   textY += 5;
@@ -223,7 +223,7 @@ type InventoryExportOpts = {
 
 export async function downloadInventoryPdf({
   products,
-  companyName = "FARMACIA",
+  companyName = "TIENDA",
   slogan,
   address,
   phone,
@@ -363,7 +363,7 @@ export async function downloadSalesPdf(
   salesOrOpts: Sale[] | SalesExportOpts,
   branchNameArg?: string,
   periodLabelArg?: string,
-  companyNameArg = "FARMACIA",
+  companyNameArg = "TIENDA",
 ) {
   // Compatibilidad con llamada posicional antigua y nueva por objeto
   const opts: SalesExportOpts = Array.isArray(salesOrOpts)
@@ -378,7 +378,7 @@ export async function downloadSalesPdf(
   const {
     sales,
     periodLabel,
-    companyName = "FARMACIA",
+    companyName = "TIENDA",
     slogan,
     address,
     phone,
@@ -507,7 +507,7 @@ export async function downloadSupplierPaymentPdf(opts: {
   const {
     payment,
     supplier,
-    companyName = "FARMACIA",
+    companyName = "TIENDA",
     slogan,
     address,
     phone,
@@ -605,7 +605,7 @@ export async function printSupplierPaymentTicket(opts: {
   const {
     payment,
     supplier,
-    companyName = "FARMACIA",
+    companyName = "TIENDA",
     slogan,
     address,
     phone,
@@ -750,7 +750,7 @@ export async function printSaleTicket(opts: {
 }) {
   const {
     sale,
-    companyName = "FARMACIA",
+    companyName = "TIENDA",
     slogan,
     address,
     phone,
@@ -935,7 +935,7 @@ export async function downloadSupplierPaymentsHistoryPdf(opts: {
     payments,
     suppliers,
     supplierId,
-    companyName = "FARMACIA",
+    companyName = "TIENDA",
     slogan,
     address,
     phone,
@@ -1057,7 +1057,7 @@ export async function downloadInvoicePdf(opts: {
 }) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a5" });
-  const company = opts.companyName?.trim() || "FARMACIA";
+  const company = opts.companyName?.trim() || "TIENDA";
   let y = 16;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
@@ -1133,7 +1133,7 @@ export async function downloadControlledLogPdf(opts: {
   let y = 16;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-  doc.text(opts.companyName?.trim() || "FARMACIA", 14, y);
+  doc.text(opts.companyName?.trim() || "TIENDA", 14, y);
   y += 6;
   doc.setFontSize(11);
   doc.text("Libro de salida de medicamentos controlados", 14, y);

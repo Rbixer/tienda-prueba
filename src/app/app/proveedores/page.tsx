@@ -100,7 +100,7 @@ function KpiCard({
 }) {
   if (featured) {
     return (
-      <section className="relative flex min-w-0 flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br from-[var(--navy)] via-[var(--navy-soft)] to-[#1b4a7e] p-4 text-white shadow-[0_12px_30px_rgba(11,37,69,0.3)] ring-1 ring-white/10 sm:p-5">
+      <section className="relative flex min-w-0 flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br from-[var(--navy)] via-[var(--navy-soft)] to-[#8a4b22] p-4 text-white shadow-[0_12px_30px_rgba(59,36,24,0.3)] ring-1 ring-white/10 sm:p-5">
         <span
           className="pointer-events-none absolute -right-10 -top-12 h-36 w-36 rounded-full bg-[var(--accent)]/20 blur-3xl"
           aria-hidden

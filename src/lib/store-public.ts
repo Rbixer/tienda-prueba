@@ -5,8 +5,13 @@ import { normalizeStoreData } from "@/lib/store";
 /** Copia del almacén segura para el cliente (sin hashes ni contraseñas). */
 export function publicStore(data: StoreData): StoreData {
   const normalized = normalizeStoreData(data);
+  const settings = { ...normalized.settings };
+  const satConfigured = Boolean(settings.satUsuario && settings.satClave);
+  delete settings.satClave;
+  settings.satConfigured = satConfigured;
   return {
     ...normalized,
+    settings,
     users: normalized.users.map((u) => ({ ...u, password: "" })),
   };
 }

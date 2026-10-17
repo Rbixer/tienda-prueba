@@ -1,34 +1,27 @@
 import type { Product } from "@/lib/types";
 
 export const PHARMACY_CATEGORIES = [
-  { id: "medicamento", label: "Medicamento" },
-  { id: "otc", label: "Venta libre" },
-  { id: "higiene", label: "Higiene" },
-  { id: "dermocosmetico", label: "Dermocosmético" },
-  { id: "suplemento", label: "Suplemento" },
-  { id: "material", label: "Material médico" },
+  { id: "abarrotes", label: "Abarrotes" },
+  { id: "bebidas", label: "Bebidas" },
+  { id: "lacteos", label: "Lácteos" },
+  { id: "snacks", label: "Snacks" },
+  { id: "limpieza", label: "Limpieza" },
+  { id: "cuidado", label: "Cuidado personal" },
 ] as const;
 
 export type PharmacyCategory = (typeof PHARMACY_CATEGORIES)[number]["id"];
 
 export const PRESENTATION_SUGGESTIONS = [
+  "Bolsa",
+  "Botella",
+  "Lata",
   "Caja",
-  "Blíster",
+  "Paquete",
   "Frasco",
-  "Tableta",
-  "Cápsula",
-  "Jarabe",
-  "Suspensión",
-  "Crema",
-  "Gel",
-  "Gotas",
-  "Inyectable",
+  "Unidad",
+  "Galón",
   "Sobre",
-  "Spray",
-  "Ungüento",
 ];
-
-const CLINICAL = new Set<PharmacyCategory>(["medicamento", "otc"]);
 
 export type PharmacyDetails = {
   genericName?: string;
@@ -144,13 +137,12 @@ export function normalizePharmacy(input: PharmacyDetails): PharmacyDetails {
     laboratory: clean(input.laboratory),
     lot: clean(input.lot),
     expiresAt,
-    requiresPrescription:
-      category === "medicamento" ? Boolean(input.requiresPrescription) : false,
+    requiresPrescription: false,
     category,
   };
 }
 
-/** Valida ficha clínica. En ingreso manual, medicamento y venta libre exigen lote y vencimiento. */
+/** Valida la ficha. La categoría es obligatoria; lote y vencimiento son opcionales. */
 export function validatePharmacy(
   input: PharmacyDetails,
   opts?: { strict?: boolean },
@@ -160,11 +152,6 @@ export function validatePharmacy(
   }
   if (!opts?.strict) return null;
   if (!input.category) return "Selecciona la categoría del producto.";
-  if (!CLINICAL.has(input.category)) return null;
-  if (!clean(input.genericName)) return "Indica el principio activo.";
-  if (!clean(input.presentation)) return "Indica la presentación.";
-  if (!clean(input.lot)) return "Indica el lote.";
-  if (!parseExpiryDate(input.expiresAt)) return "Indica la fecha de vencimiento.";
   return null;
 }
 

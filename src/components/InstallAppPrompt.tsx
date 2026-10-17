@@ -84,13 +84,13 @@ export function InstallAppPrompt() {
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[70] flex justify-center p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:justify-end">
-      <div className="pointer-events-auto w-full max-w-md rounded-2xl border border-white/15 bg-[var(--navy)] p-3.5 text-white shadow-[0_16px_40px_rgba(11,37,69,0.45)]">
+      <div className="pointer-events-auto w-full max-w-md rounded-2xl border border-white/15 bg-[var(--navy)] p-3.5 text-white shadow-[0_16px_40px_rgba(59,36,24,0.45)]">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/12">
             <Download size={18} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">Instala FARMACIA</p>
+            <p className="text-sm font-semibold">Instala TIENDA</p>
             {showAndroid ? (
               <p className="mt-1 text-xs text-white/75">
                 Acceso rápido desde tu pantalla de inicio, como una app.

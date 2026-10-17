@@ -28,13 +28,22 @@ export function readLocalStore(): StoreData | null {
   }
 }
 
+function withoutSatSecret(data: StoreData): StoreData {
+  if (!data.settings?.satClave) return data;
+  const settings = { ...data.settings };
+  delete settings.satClave;
+  return { ...data, settings };
+}
+
 export function writeLocalStore(data: StoreData): void {
   if (typeof window === "undefined") return;
   try {
-    const safe = normalizeStoreData({
-      ...data,
-      users: data.users.map((u) => ({ ...u, password: "" })),
-    });
+    const safe = withoutSatSecret(
+      normalizeStoreData({
+        ...data,
+        users: data.users.map((u) => ({ ...u, password: "" })),
+      }),
+    );
     localStorage.setItem(STORAGE_KEY, JSON.stringify(safe));
   } catch {
     // ignore quota / private mode
@@ -89,11 +98,11 @@ export function mergeStores(
       companyName:
         s.settings?.companyName?.trim() ||
         l.settings?.companyName?.trim() ||
-        "FARMACIA",
+        "TIENDA",
       slogan:
         s.settings?.slogan?.trim() ||
         l.settings?.slogan?.trim() ||
-        "Tu salud, en buenas manos",
+        "Lo del día, cerca de ti",
       address:
         s.settings?.address?.trim() ||
         l.settings?.address?.trim() ||
@@ -121,14 +130,16 @@ export async function fetchStore(): Promise<StoreData> {
 }
 
 export async function saveStore(data: StoreData): Promise<StoreData> {
-  const payload = normalizeStoreData({
-    ...data,
-    // Nunca reenviar hashes; solo texto plano al crear/cambiar contraseña
-    users: data.users.map((u) => ({
-      ...u,
-      password: u.password && !u.password.startsWith("$2") ? u.password : "",
-    })),
-  });
+  const payload = withoutSatSecret(
+    normalizeStoreData({
+      ...data,
+      // Nunca reenviar hashes; solo texto plano al crear/cambiar contraseña
+      users: data.users.map((u) => ({
+        ...u,
+        password: u.password && !u.password.startsWith("$2") ? u.password : "",
+      })),
+    }),
+  );
   const res = await fetch("/api/store", {
     method: "PUT",
     credentials: "include",

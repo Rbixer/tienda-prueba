@@ -37,12 +37,12 @@ export type User = {
 };
 
 export type PharmacyCategory =
-  | "medicamento"
-  | "otc"
-  | "higiene"
-  | "dermocosmetico"
-  | "suplemento"
-  | "material";
+  | "abarrotes"
+  | "bebidas"
+  | "lacteos"
+  | "snacks"
+  | "limpieza"
+  | "cuidado";
 
 export type PaymentMethod = "efectivo" | "tarjeta" | "transferencia";
 
@@ -57,28 +57,28 @@ export type Product = {
   /** Código de barras */
   barcode?: string;
   image?: string;
-  /** Principio activo o nombre genérico */
+  /** Marca */
   genericName?: string;
-  /** Caja, frasco, tubo, blíster… */
+  /** Bolsa, botella, caja, lata… */
   presentation?: string;
-  /** 500 mg, 250 mg/5 ml… */
+  /** 1 lb, 500 ml, 12 unidades… */
   concentration?: string;
   laboratory?: string;
   lot?: string;
   /** Fecha de vencimiento YYYY-MM-DD del lote que sale primero */
   expiresAt?: string;
   requiresPrescription?: boolean;
-  /** Psicotrópico o estupefaciente: exige receta en el mostrador */
+  /** Reservado. En la tienda no se usa. */
   controlled?: boolean;
   /** Aviso cuando las cajas bajan de este número */
   minStock?: number;
-  /** Unidades dentro de una caja (tabletas, ampollas…) */
+  /** Unidades dentro de una caja */
   unitsPerBox?: number;
   /** Precio de una unidad suelta */
   unitPrice?: number;
-  /** Unidades dentro de un blíster */
+  /** Unidades dentro de un paquete */
   unitsPerBlister?: number;
-  /** Precio de un blíster */
+  /** Precio de un paquete */
   blisterPrice?: number;
   /** Unidades sueltas, suma de los lotes */
   looseUnits?: number;
@@ -226,6 +226,15 @@ export type CompanySettings = {
   /** NIT del establecimiento, para la factura */
   nit?: string;
   invoiceSeries?: string;
+  /**
+   * Usuario del servicio de consulta de NIT (Infile / Feel).
+   * La clave no viaja al navegador.
+   */
+  satUsuario?: string;
+  /** Clave del servicio de consulta de NIT. Solo en el servidor. */
+  satClave?: string;
+  /** True en la copia pública cuando ya hay usuario y clave guardados. */
+  satConfigured?: boolean;
   nextInvoiceNumber?: number;
   /**
    * fija: el fondo queda bloqueado y no se cambia al aperturar.

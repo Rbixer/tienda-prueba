@@ -76,7 +76,7 @@ function StatCard({
 }) {
   if (featured) {
     return (
-      <section className="relative flex min-w-0 flex-col justify-between overflow-hidden rounded-2xl border border-[var(--brand-dark)]/20 bg-gradient-to-br from-[var(--brand)] to-[var(--brand-dark)] p-3.5 text-white shadow-[0_10px_30px_rgba(37,99,235,0.28)] sm:p-5 col-span-2 sm:col-span-1 xl:col-span-1">
+      <section className="relative flex min-w-0 flex-col justify-between overflow-hidden rounded-2xl border border-[var(--brand-dark)]/20 bg-gradient-to-br from-[var(--brand)] to-[var(--brand-dark)] p-3.5 text-white shadow-[0_10px_30px_rgba(194,81,18,0.28)] sm:p-5 col-span-2 sm:col-span-1 xl:col-span-1">
         <span
           className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/10 blur-2xl"
           aria-hidden
@@ -412,7 +412,7 @@ export default function HomePage() {
   return (
     <AppShell
       title="Dashboard"
-      subtitle={isAdmin ? "Análisis de la farmacia" : "Resumen del día"}
+      subtitle={isAdmin ? "Análisis de la tienda" : "Resumen del día"}
     >
       <div className="flex w-full min-w-0 max-w-full flex-col gap-3 sm:gap-4">
         <CashStatusNotice />
@@ -481,7 +481,7 @@ export default function HomePage() {
               <Panel className="min-w-0 lg:col-span-2">
                 <SectionHeader
                   icon={Sparkles}
-                  title="Salud del catálogo"
+                  title="Estado del catálogo"
                   hint="Rotación de productos"
                 />
                 <div className="flex flex-wrap items-start justify-around gap-2 pt-1 sm:gap-3">
@@ -495,7 +495,7 @@ export default function HomePage() {
                     label="Alto volumen"
                     value={strongShare}
                     percent={strongShare}
-                    color="#0f7a56"
+                    color="#e06a1f"
                   />
                   <DonutGauge
                     label="A descartar"

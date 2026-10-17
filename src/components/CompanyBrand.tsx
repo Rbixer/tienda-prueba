@@ -20,7 +20,7 @@ export function CompanyBrand({
   className?: string;
 }) {
   const { data } = useAuth();
-  const settings = data.settings ?? { companyName: "FARMACIA" };
+  const settings = data.settings ?? { companyName: "TIENDA" };
   const hasLogo = Boolean(settings.logo);
   const bare = plain || (hasLogo && size === "xl");
 
@@ -85,7 +85,7 @@ export function CompanyBrand({
             variant === "dark" ? "text-white" : "text-[var(--navy)]"
           }`}
         >
-          {settings.companyName?.trim() || "FARMACIA"}
+          {settings.companyName?.trim() || "TIENDA"}
         </span>
       ) : null}
     </div>

@@ -113,7 +113,7 @@ export function packPrice(product: Product, pack: SalePack): number {
 
 export function packName(pack?: string): string {
   if (pack === "unidad") return "unidad";
-  if (pack === "blister") return "blíster";
+  if (pack === "blister") return "paquete";
   return "caja";
 }
 
@@ -154,11 +154,11 @@ export function readSalePacks(input: {
     if (!unitsPerBox || !unitsPerBlister || blisterPrice === undefined) {
       return {
         error:
-          "El blíster necesita unidades por caja, unidades por blíster y su precio.",
+          "El paquete necesita unidades por caja, unidades por paquete y su precio.",
       };
     }
     if (unitsPerBlister > unitsPerBox) {
-      return { error: "El blíster no puede traer más unidades que la caja." };
+      return { error: "El paquete no puede traer más unidades que la caja." };
     }
   }
   return {
@@ -308,7 +308,7 @@ export function commitSaleItem(
     return {
       product,
       item,
-      error: `${product.name} no se vende por blíster.`,
+      error: `${product.name} no se vende por paquete.`,
     };
   }
   const result =

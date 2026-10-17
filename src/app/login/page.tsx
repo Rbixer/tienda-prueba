@@ -25,7 +25,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { ready, session, login, data } = useAuth();
-  const companyName = data.settings?.companyName?.trim() || "FARMACIA";
+  const companyName = data.settings?.companyName?.trim() || "TIENDA";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
